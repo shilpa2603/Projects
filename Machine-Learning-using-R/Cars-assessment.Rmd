@@ -1,0 +1,509 @@
+
+Loading set of libraries
+```{r}
+getwd()
+toload_libraries <- c("DataExplorer", "corpcor", "caTools", "gbm", "xgboost", "ipred", "DMwR", "lime", "car", "caret", "class","devtools", "e1071", "ggplot2", "klaR", "nnet", "plyr", "psych", "scatterplot3d","dplyr", "rpart", "rpart.plot", "ggplot2", "randomForest", "neuralnet", "pROC", "Hmisc", "MASS", "ISLR", "ROCR")
+new.packages <- toload_libraries[!(toload_libraries %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+lapply(toload_libraries, require, character.only= TRUE)
+```
+
+
+
+STEP1: DATA LOADING AND TRANSFORMATION
+```{r include=FALSE}
+#Replace the below command to point to your working directory
+setwd ("C:/DATA/R-prog/learning/Downloaded/Module6-MachineLearning/")
+getwd()
+carsDS <- read.csv("cars.csv", header=T)
+View(carsDS)
+
+```
+
+
+
+Check for defects in the data such as missing values, null values, and outliers
+```{r}
+
+# EDA
+head(carsDS)
+dim(carsDS)
+str(carsDS)
+summary(carsDS)
+attach(carsDS)
+
+## check for missing values
+any(is.na(carsDS))
+sum(is.na(carsDS$MBA))
+sum(is.na(carsDS))
+which(is.na(carsDS$MBA))
+
+##count and remove the number of NAs in the entire dataframe 
+carsDS[is.na(carsDS)] = 0
+any(is.na(carsDS))
+
+
+##Convert other relevant variables to factor
+
+carsDS$Engineer = as.factor(carsDS$Engineer)
+carsDS$MBA = as.factor(carsDS$MBA)
+carsDS$license = as.factor(carsDS$license)
+summary(carsDS)
+```
+
+
+
+Histogram plotc for continous variables
+```{r}
+
+### Histogram of variables 
+
+plot_histogram(carsDS,geom_histogram_args = list(fill="blue"),
+               theme_config = list(axis.line = element_line(size = 1, colour = "green"), strip.background = element_rect(color = "red", fill = "yellow")))  ## checking the distribution of variables 
+
+```
+
+
+Bar plots of categorical variables
+
+```{r}
+prop.table(table(carsDS$Transport))
+p1 <- ggplot(carsDS, aes(x=Transport)) + ggtitle("Type of Transport Used by Employees") + xlab("Transport") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+
+
+p2 <- ggplot(carsDS, aes(x=Engineer)) + ggtitle("No of Employees who are Engineers") + xlab("Engineer") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+
+p3 <- ggplot(carsDS, aes(x=MBA)) + ggtitle("No of Employees who are MBA") + xlab("MBA") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p4 <- ggplot(carsDS, aes(x=license)) + ggtitle("No of Employees with License") + xlab("license") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p5 <- ggplot(carsDS, aes(x=Gender)) + ggtitle("No of Employees by Gender") + xlab("Gender") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+grid.arrange(p1, p2, p3, p4, p5, ncol=2)
+
+```
+
+```{r}
+
+## FILTERING THE CUSTOMERS WHO HAVE USED CAR
+newdt1 <- carsDS %>% 
+  filter( Transport == "Car")
+View(newdt1)
+
+plot_boxplot(newdt1, by = "Transport", 
+             geom_boxplot_args = list("outlier.color" = "red"))
+
+##newdt2 <- carsDS %>% 
+##  filter( Transport == "2Wheeler")
+##View(newdt2)
+
+##plot_boxplot(newdt2, by = "Transport", 
+##             geom_boxplot_args = list("outlier.color" = "red"))
+
+
+
+##newdt3 <- carsDS %>% 
+##  filter( Transport == "Public Transport")
+##View(newdt2)
+
+##plot_boxplot(newdt3, by = "Transport", 
+##             geom_boxplot_args = list("outlier.color" = "red"))
+
+
+p11 =boxplot(carsDS$Salary~carsDS$Transport, main="Salary vs Transport")
+p22 =boxplot(carsDS$Age~carsDS$Transport, main="Age vs Transport")
+p33 =boxplot(carsDS$Distance~carsDS$Transport, main="Distance vs Transport")
+p55 = boxplot(carsDS$Work.Exp ~ carsDS$Transport, main="Work.Exp vs Transport")
+
+pF <-
+  carsDS %>%
+  filter(Gender == "Female") %>%
+  ggplot() +
+  geom_bar(aes(x = Transport, fill = Transport)) +
+  facet_wrap(~ Gender )
+pF
+
+pM <-
+  carsDS %>%
+  filter(Gender == "Male") %>%
+  ggplot() +
+  geom_bar(aes(x = Transport, fill = Transport)) +
+  facet_wrap(~ Gender)
+pM
+
+##outlier Treatment
+detect_outliers <- function(x) {
+  print(summary(x))
+  outlier_values <- boxplot.stats(x)$out  # outlier values
+  return(outlier_values)
+}
+detect_outliers(Age)
+detect_outliers(`Work.Exp`)
+detect_outliers(Salary)
+detect_outliers(Distance)
+
+
+for (i in which(sapply(Age, is.numeric))) {
+  quantiles <- quantile(Age, c(.05, .95 ), na.rm =TRUE)
+  Age = ifelse(Age < quantiles[1] , quantiles[1], Age)
+  Age = ifelse(Age> quantiles[2] , quantiles[2], Age)}
+
+
+for (i in which(sapply(`Work.Exp`, is.numeric))) {
+  quantiles <- quantile(`Work.Exp`, c(.05, .95 ), na.rm =TRUE)
+  `Work.Exp` = ifelse(`Work.Exp` < quantiles[1] , quantiles[1], `Work.Exp`)
+  `Work.Exp` = ifelse(`Work.Exp`> quantiles[2] , quantiles[2], `Work.Exp`)}
+
+for (i in which(sapply(Salary, is.numeric))) {
+  quantiles <- quantile(Salary, c(.05, .95 ), na.rm =TRUE)
+  Salary = ifelse(Salary < quantiles[1] , quantiles[1], Salary)
+  Salary = ifelse(Salary> quantiles[2] , quantiles[2], Salary)}
+
+for (i in which(sapply(Distance, is.numeric))) {
+  quantiles <- quantile(Distance, c(.05, .95 ), na.rm =TRUE)
+  Distance = ifelse(Distance < quantiles[1] , quantiles[1], Distance)
+  Distance = ifelse(Distance> quantiles[2] , quantiles[2], Distance)}
+
+detect_outliers(Age)
+detect_outliers(`Work.Exp`)
+detect_outliers(Salary)
+detect_outliers(Distance)
+
+```
+Correlation between numeric variables
+
+```{r}
+#library(psych)
+#library(corrplot)
+numeric.var <- sapply(carsDS, is.numeric)
+corr.matrix <- cor(carsDS[,numeric.var])
+
+corr.matrix <- cor(carsDS)
+corrplot(corr.matrix, main="\n\nCorrelation Plot for Numerical Variables", method="number")
+
+
+```
+
+```{r}
+#working with SMOTE
+#library(DMwR)
+
+#Creating new variable for car and non-car use
+
+carsDS$CarUse<-ifelse(carsDS$Transport =='Car',1,0)
+carsDS$CarUse<-as.factor(carsDS$CarUse)
+
+## Let's check the count of unique value in the target variable
+as.data.frame(table(carsDS$CarUse))
+table(carsDS$CarUse)
+sum(carsDS$CarUse == 1)/nrow(carsDS)
+prop.table(table(carsDS$CarUse))
+
+##Split the data into test and train
+set.seed(400)
+carindex<-createDataPartition(carsDS$CarUse, p=0.7,list = FALSE,times = 1)
+carsDStrain<-carsDS[carindex,]
+carsDStest<-carsDS[-carindex,]
+prop.table(table(carsDStrain$CarUse))
+carsDStrain<-carsDStrain[,c(1:8,10)]
+carsDStest<-carsDStest[,c(1:8,10)]
+View(carsDStrain)                                                                                                                                                                                                                                                                                                              
+class(carsDStrain$CarUse)
+class(carsDStest$CarUse)
+## Smote : Synthetic Minority Oversampling Technique To Handle Class Imbalance In Binary Classification
+balanced.data <- SMOTE(CarUse ~., carsDStrain, perc.over = 400, k = 5, perc.under = 300)
+table(balanced.data$CarUse)
+as.data.frame(table(balanced.data$CarUse))
+prop.table(table(balanced.data$CarUse))
+class(balanced.data$CarUse)
+summary(balanced.data)
+attach(balanced.data)
+```
+
+
+
+APPLYING LOGISTIC REGRESSION
+```{r}
+param1<- CarUse ~ Age + Gender + Engineer + MBA + Work.Exp + Salary + Distance + license
+
+param2<- CarUse ~  Gender  + Engineer + MBA  + Distance + license
+
+param3<- CarUse ~  Age + Gender  + Engineer + MBA  + Distance + license
+
+#library(caret)
+
+### ##----------------------- LOGISTIC REGRESSION ----------------------- ## ###
+##Model 1
+
+logit_model1 = glm(param1, data = balanced.data, family =binomial) 
+summary(logit_model1)
+vif(logit_model1)
+
+## Predict the Values
+predict1 <- predict(logit_model1, carsDStest, type = 'response')
+cm_logit1 = table(ActualValue=carsDStest$CarUse, PredictedValue=predict1>0.5)
+cm_logit1
+##Evaluate the performance of classification model
+print("Confusion Matrix for Logistic Regression"); 
+calc(cm_logit1)
+
+##Model 2
+logit_model2 = glm(param2, data = balanced.data, family =binomial) 
+summary(logit_model2)
+vif(logit_model2)
+
+## Predict the Values
+predict2 <- predict(logit_model2, carsDStest, type = 'response')
+cm_logit2 = table(ActualValue=carsDStest$CarUse, PredictedValue=predict2>0.5)
+cm_logit2
+##Evaluate the performance of classification model
+print("Confusion Matrix for Logistic Regression"); 
+calc(cm_logit2)
+
+##Model 3
+logit_model3 = glm(param3, data = balanced.data, family =binomial) 
+summary(logit_model3)
+vif(logit_model3)
+
+## Predict the Values
+predict3 <- predict(logit_model3, carsDStest, type = 'response')
+cm_logit3 = table(ActualValue=carsDStest$CarUse, PredictedValue=predict3>0.5)
+cm_logit3
+##Evaluate the performance of classification model
+print("Confusion Matrix for Logistic Regression") 
+calc(cm_logit3)
+
+
+##ROC Plot
+
+ROCRpred1 <- prediction(predict1, carsDStest$CarUse)
+ROCRperf1 <- performance(ROCRpred1, 'tpr','fpr')
+plot(ROCRperf1, colorize = TRUE, text.adj = c(-0.2,1.7))
+
+auc1=as.numeric(performance(ROCRpred,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc1)) 
+
+ROCRpred2 <- prediction(predict2, carsDStest$CarUse)
+ROCRperf2 <- performance(ROCRpred2, 'tpr','fpr')
+plot(ROCRperf2, colorize = TRUE, text.adj = c(-0.2,1.7))
+auc2=as.numeric(performance(ROCRpred2,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc2)) 
+
+ROCRpred3 <- prediction(predict3, carsDStest$CarUse)
+ROCRperf3 <- performance(ROCRpred, 'tpr','fpr')
+plot(ROCRperf3, colorize = TRUE, text.adj = c(-0.2,1.7))
+auc2=as.numeric(performance(ROCRpred3,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc2)) 
+
+#KS and GINI coeff
+
+KS1 <-max(attr(ROCRperf1, 'y.values')[[1]]-attr(ROCRperf1, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS1))
+
+KS2 <-max(attr(ROCRperf2, 'y.values')[[1]]-attr(ROCRperf2, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS2))
+
+KS3 <-max(attr(ROCRperf3, 'y.values')[[1]]-attr(ROCRperf3, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS3))
+
+
+gini1 =ineq(ROCRpred2$response, type="Gini")
+print(paste('Gini Coefficient for test dataset:',gini1))
+
+```
+
+APPLYING KNN
+```{r}
+
+#For KNN we convert Gender in 0 and 1
+View(balanced.data)
+
+
+##find the optimal cluster
+
+
+totWss=rep(0,8)
+for(k in 1:8){
+  seed=80
+  set.seed(seed)
+  clust=kmeans(x=balanced.data, centers=k, nstart=5)
+  
+  ##clusplot(ds2.scaled, clust$cluster,color=TRUE, shade=FALSE, labels=2, lines=1)
+  ##print(clust)
+  totWss[k]=clust$tot.withinss
+}
+plot(c(1:8), totWss, type="b", xlab="Number of Clusters",
+       ylab="sum of 'Within groups sum of squares'") 
+
+
+#Apply KNN  only on numeric variables
+#library(class)
+#Feature Scaling
+balanced.data[,1:8] <- as.numeric(unlist(balanced.data[,1:8]))
+balanced.data[,c(1:8)] <- scale(balanced.data[,c(1:8)])
+
+carsDStest[,1:8] <- as.numeric(unlist(carsDStest[,1:8]))
+carsDStest[,c(1:8)] <- scale(carsDStest[,c(1:8)])
+
+#Model Formation
+control <- trainControl(method = 'cv', number = 5)
+
+kn <- train(CarUse ~ .,
+            method     = "knn",
+            tuneGrid   = expand.grid(k = 2:50),
+            trControl  = control,
+            metric     = "Accuracy",
+            data       = balanced.data)
+
+print(kn)
+summary(kn)
+plot(kn)
+
+
+#Select K=3 and  predict classes for our test set.
+
+
+knn_pred <- predict(kn, newdata = carsDStest)
+knn_pred
+table(knn_pred, carsDStest$CarUse)
+
+#Confusion matrix
+cm_knn = table(carsDStest$CarUse,knn_Pred)
+confusionMatrix(cm_knn)
+calc(cm_knn)
+
+
+
+```
+
+APPLYING NAIVE BAYES
+```{r}
+
+##library(e1071)
+##Method 1 using Train dataset
+
+NBmodel1 = naiveBayes(param1, data = carsDStrain)
+NBpred1 = predict(NBmodel1, newdata = carsDStest)
+NBmodel
+tabNB1 = table(carsDStest$CarUse, NBpred1)
+message("Contingency Table for Training Data")
+tabNB1
+
+##Method 2 using Balanced dataset
+NBmodel2= naiveBayes(param2, data = carsDStrain)
+NBpred2 = predict(NBmodel2, newdata = carsDStest)
+NBmodel2
+tabNB2 = table(carsDStest$CarUse, NBpred2)
+message("Contingency Table for Training Data")
+tabNB2
+
+##Method 3 using Balanced dataset
+NBmodel3= naiveBayes(param3, data = carsDStrain)
+NBpred3 = predict(NBmodel3, newdata = carsDStest)
+NBmodel3
+tabNB3  = table(carsDStest$CarUse, NBpred3)
+message("Contingency Table for Training Data")
+tabNB3
+
+#What gives you better accuracy?
+message("Accuracy NB Model 1")
+calc(tabNB1)
+message("Accuracy NB Model 2")
+calc(tabNB2) 
+message("Accuracy NB Model 3")
+calc(tabNB3) 
+
+
+
+```
+
+```{r}
+##Bagging
+
+#library(ipred)
+#library(rpart)
+
+# make bootstrapping reproducible
+set.seed(123)
+
+# train bagged model
+cars_bag1 <- bagging(
+  formula = CarUse ~ .,
+  data = carsDStrain,
+  nbagg = 100,  
+  coob = TRUE,
+  control = rpart.control(minsplit = 2, cp = 0)
+)
+
+cars_bag1
+
+
+cars_bag2 <- bagging(
+  formula = CarUse ~ .,
+  data = carsDStrain,
+  nbagg = 25,  
+  coob = TRUE,
+  control = rpart.control(maxdepth=5, minsplit=4)
+)
+
+cars_bag2
+
+
+carsDStest$pred.class <- predict(cars_bag1, carsDStest)
+
+
+```
+
+
+
+Now let's try some general boosting techniques.
+
+```{r}
+
+##Boosting
+
+
+gbm.fit <- gbm(
+  formula = CarUse ~ .,
+  distribution = "bernoulli",#we are using bernoulli because we are doing a logistic and want probabilities
+  data = carsDStrain,
+  n.trees = 10000, #these are the number of stumps
+  interaction.depth = 1,#number of splits it has to perform on a tree (starting from a single node)
+  shrinkage = 0.001,#shrinkage is used for reducing, or shrinking the impact of each additional fitted base-learner(tree)
+  cv.folds = 5,#cross validation folds
+ objective = "binary:logistic",  # for regression models
+ n.cores = NULL, # will use all cores by default
+  verbose = FALSE#after every tree/stump it is going to show the error and how it is changing
+)  
+
+
+carsDStest$pred.class <- predict(gbm.fit, CarUse, type = "response")
+#we have to put type="response" just like in logistic regression else we will have log odds
+
+table(carsDStest$CarUse,carsDStest$pred.class>0.5)
+
+
+```
+
+
+```{r}
+
+# #function for calculating the FNR,FPR,Accuracy
+calc <- function(cm){
+  TN = cm[1,1]
+  FP = cm[1,2]
+  FN = cm[2,1]
+  TP = cm[2,2]
+  # #calculations
+  print(paste0('Accuracy :- ',((TN+TP)/(TN+TP+FN+FP))*100))
+  print(paste0('FNR :- ',((FN)/(TP+FN))*100))
+  print(paste0('FPR :- ',((FP)/(TN+FP))*100))
+  print(paste0('precision :-  ',((TP)/(TP+FP))*100)) 
+  print(paste0('recall//TPR :-  ',((TP)/(TP+FP))*100))
+  print(paste0('Sensitivity :-  ',((TP)/(TP+FN))*100))
+  print(paste0('Specificity :-  ',((TN)/(TN+FP))*100))
+  plot(cm)
+}
+```

@@ -1,0 +1,723 @@
+```{r}
+#Loading relevant libraries for current session
+library(readr)
+library(readxl)
+library(DataExplorer)
+library(caTools)
+library(MASS)
+library(caret)
+library(ROCR)
+library(corrplot)
+library(car)
+library(tidyverse)
+library(CreditRisk)
+library(dplyr)
+library(rms)
+library(randomForest)
+library(e1071)
+library(gplots)
+library(rpart)
+library(ROSE)
+library(modelr)
+library(broom)
+library(ISLR)
+#install.packages("remotes")
+#remotes::install_version("SDMTools", "1.1-221")
+
+#Reading the file in R
+setwd("E:/DATA/Data-Analytics/R-prog/learning/Downloaded/Module-FRA/Project")
+getwd()
+
+#Train data -original dataset
+indiacreditrisk_1=read_xlsx("raw-data.xlsx")
+summary(indiacreditrisk_1)
+str(indiacreditrisk_1)
+#View(indiacreditrisk_1)
+plot_histogram(indiacreditrisk_1)
+
+#Test data - validation dataset
+indiacreditrisk_val=read_xlsx("validation_data.xlsx")
+summary(indiacreditrisk_val)
+str(indiacreditrisk_val)
+#View(indiacreditrisk_val)
+plot_histogram(indiacreditrisk_val)
+
+```
+
+Create Dependent variable - We need to create a default variable which should take the value of 1 when net worth is negative & 0 when net worth is positive.
+```{r}
+
+#Checking for missing values and omitting for the purpose of this case study
+names(indiacreditrisk_1)
+
+
+    #there are 3541 observations 52 columns; 
+    #Column Names have been changed to shorten
+
+#change to easier column names
+colnames(indiacreditrisk_1) = c("Num", "NNY", "TotAssests", "NW", "TotIncome", "ChangeinStock%","TotExpenses", "PAT", "PBDITA", "PBT", "CashProfit","PBDITA_TotIncome", "PBD_TotIncome", "PAT_TotIncome", "CashProfit_TotIncome", "PAT_NW","Sales", "Income_FinServ","Income_Other","TotCapital","ReserveFunds","Deposits", "Borrowings", "Curr_Liabilities","Deferred_TaxLiability","ShareHolderFunds","RetainedProfits_Cumulative", "Capital_employed","TolTNW","TtlTNW","Contingent_LiabilitiesNW","Contingent_Liabilities","Net_FixedAssets","Investments","Curr_Assets","Capital_NW","Quick_Ratio","Curr_Ratio","Debt-to-Equity_Ratio","Cash-to-Curr_Liabilities","Cash-to-AvgCost_Sales_PerDay","Creditors_TurnOver","Debtors_TurnOver","FinishedfGoods_TurnOver","WIP_TurnOver", "RawMaterial_TurnOver", "Shares_Outstanding",   "EquityFaceValue","EPS","AdjustedEPS","Tot_Liabilities","PE_on_BSE") 
+
+names(indiacreditrisk_1)
+
+#Derive the Y-variable from NNY column and drop the NNY column
+#Networth Next Year <0, mark as 1 (Defaulter)
+#Networth Next Year >=0, mark as 0 (NonDefaulter)
+
+indiacreditrisk_1$NN<- ifelse(indiacreditrisk_1$NNY<0,1,0)
+
+hist(indiacreditrisk_1$NN)
+#Checking distribution of dependent variable
+summary(as.factor(indiacreditrisk_1$NN))
+
+#    0    1 
+# 3307  234 
+234/(3307+234)
+```
+DATA PREPARATION
+```{r}
+
+# Let's check for any NAs in the data
+any(is.na(indiacreditrisk_1))
+colSums(is.na(indiacreditrisk_1))
+
+#Lets sort columns with NAs
+sort(colSums(is.na(indiacreditrisk_1)))
+
+# we can see that columns Deposits (all), PE_on_BSE (2194) has lot of NAs
+(2194/3541) # 62%
+(1435/3541) # 40.5%
+# Since ratio of NAs is very high we drop these columns (22,52) and proceed with treating outliers and imputing NAs in other columns.
+# we can also remove the Num, and NNY column as we have the derived Y-variable from this column
+
+indiacreditrisk_2 = indiacreditrisk_1[,-c(1,2,22,52)]
+
+# after removal there are 3541 obs and 49 columns
+
+#Creating Default ('NN') as factor type variable 
+indiacreditrisk_2$NN=as.factor(indiacreditrisk_2$NN)
+
+str(indiacreditrisk_2)
+#Creating other column that are as character as numeric type variable 
+indiacreditrisk_2$Creditors_TurnOver = as.numeric(indiacreditrisk_2$Creditors_TurnOver)
+indiacreditrisk_2$Debtors_TurnOver = as.numeric(indiacreditrisk_2$Debtors_TurnOver)
+indiacreditrisk_2$FinishedfGoods_TurnOver = as.numeric(indiacreditrisk_2$FinishedfGoods_TurnOver)
+indiacreditrisk_2$WIP_TurnOver = as.numeric(indiacreditrisk_2$WIP_TurnOver)
+indiacreditrisk_2$RawMaterial_TurnOver = as.numeric(indiacreditrisk_2$RawMaterial_TurnOver)
+indiacreditrisk_2$Shares_Outstanding = as.numeric(indiacreditrisk_2$Shares_Outstanding)
+indiacreditrisk_2$EquityFaceValue = as.numeric(indiacreditrisk_2$EquityFaceValue)
+str(indiacreditrisk_2)
+
+#lapply(seq_along(indiacreditrisk_2), function(x){
+#boxplot(indiacreditrisk_2[[x]], main = paste("Title : ", colnames(indiacreditrisk_2))[[x]])
+# })
+```
+OUTLIER TREATMENT FOR TRAIN DATASET
+
+```{r}
+names(indiacreditrisk_2)
+str(indiacreditrisk_2)
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+indiacreditrisk_2$TotAssests=outlier_capping(indiacreditrisk_2$TotAssests) 
+indiacreditrisk_2$NW=outlier_capping(indiacreditrisk_2$NW) 
+indiacreditrisk_2$TotIncome=outlier_capping(indiacreditrisk_2$TotIncome) 
+indiacreditrisk_2$'ChangeinStock%'=outlier_capping(indiacreditrisk_2$'ChangeinStock%') 
+indiacreditrisk_2$TotExpenses=outlier_capping(indiacreditrisk_2$TotExpenses) 
+indiacreditrisk_2$PBDITA=outlier_capping(indiacreditrisk_2$PBDITA) 
+indiacreditrisk_2$PAT=outlier_capping(indiacreditrisk_2$PAT) 
+indiacreditrisk_2$PBT=outlier_capping(indiacreditrisk_2$PBT) 
+indiacreditrisk_2$CashProfit=outlier_capping(indiacreditrisk_2$CashProfit) 
+indiacreditrisk_2$PBDITA_TotIncome=outlier_capping(indiacreditrisk_2$PBDITA_TotIncome) 
+indiacreditrisk_2$PBD_TotIncome=outlier_capping(indiacreditrisk_2$PBD_TotIncome)
+indiacreditrisk_2$PAT_TotIncome=outlier_capping(indiacreditrisk_2$PAT_TotIncome)
+
+indiacreditrisk_2$CashProfit_TotIncome=outlier_capping(indiacreditrisk_2$CashProfit_TotIncome) 
+indiacreditrisk_2$PAT_NW=outlier_capping(indiacreditrisk_2$PAT_NW) 
+indiacreditrisk_2$Sales=outlier_capping(indiacreditrisk_2$Sales) 
+
+indiacreditrisk_2$Income_FinServ=outlier_capping(indiacreditrisk_2$Income_FinServ) 
+indiacreditrisk_2$Income_Other=outlier_capping(indiacreditrisk_2$Income_Other) 
+indiacreditrisk_2$TotCapital=outlier_capping(indiacreditrisk_2$TotCapital) 
+indiacreditrisk_2$ReserveFunds=outlier_capping(indiacreditrisk_2$ReserveFunds)
+indiacreditrisk_2$Borrowings=outlier_capping(indiacreditrisk_2$Borrowings) 
+indiacreditrisk_2$Curr_Liabilities=outlier_capping(indiacreditrisk_2$Curr_Liabilities) 
+indiacreditrisk_2$Deferred_TaxLiability=outlier_capping(indiacreditrisk_2$Deferred_TaxLiability) 
+indiacreditrisk_2$ShareHolderFunds=outlier_capping(indiacreditrisk_2$ShareHolderFunds) 
+indiacreditrisk_2$RetainedProfits_Cumulative=outlier_capping(indiacreditrisk_2$RetainedProfits_Cumulative) 
+indiacreditrisk_2$Capital_employed=outlier_capping(indiacreditrisk_2$Capital_employed) 
+indiacreditrisk_2$TolTNW=outlier_capping(indiacreditrisk_2$TolTNW) 
+indiacreditrisk_2$TtlTNW=outlier_capping(indiacreditrisk_2$TtlTNW)
+indiacreditrisk_2$Contingent_LiabilitiesNW=outlier_capping(indiacreditrisk_2$Contingent_LiabilitiesNW) 
+indiacreditrisk_2$Contingent_Liabilities=outlier_capping(indiacreditrisk_2$Contingent_Liabilities) 
+indiacreditrisk_2$Net_FixedAssets=outlier_capping(indiacreditrisk_2$Net_FixedAssets) 
+indiacreditrisk_2$Investments=outlier_capping(indiacreditrisk_2$Investments) 
+indiacreditrisk_2$Curr_Assets=outlier_capping(indiacreditrisk_2$Curr_Assets) 
+indiacreditrisk_2$Capital_NW=outlier_capping(indiacreditrisk_2$Capital_NW) 
+indiacreditrisk_2$Quick_Ratio=outlier_capping(indiacreditrisk_2$Quick_Ratio)
+indiacreditrisk_2$Curr_Ratio=outlier_capping(indiacreditrisk_2$Curr_Ratio)
+indiacreditrisk_2$'Debt-to-Equity_Ratio'=outlier_capping(indiacreditrisk_2$'Debt-to-Equity_Ratio')
+indiacreditrisk_2$'Cash-to-Curr_Liabilities'=outlier_capping(indiacreditrisk_2$'Cash-to-Curr_Liabilities') 
+indiacreditrisk_2$'Cash-to-AvgCost_Sales_PerDay'=outlier_capping(indiacreditrisk_2$'Cash-to-AvgCost_Sales_PerDay') 
+indiacreditrisk_2$Creditors_TurnOver=outlier_capping(indiacreditrisk_2$Creditors_TurnOver) 
+indiacreditrisk_2$Debtors_TurnOver=outlier_capping(indiacreditrisk_2$Debtors_TurnOver) 
+indiacreditrisk_2$FinishedfGoods_TurnOver=outlier_capping(indiacreditrisk_2$FinishedfGoods_TurnOver) 
+indiacreditrisk_2$WIP_TurnOver=outlier_capping(indiacreditrisk_2$WIP_TurnOver) 
+indiacreditrisk_2$RawMaterial_TurnOver=outlier_capping(indiacreditrisk_2$RawMaterial_TurnOver) 
+indiacreditrisk_2$Shares_Outstanding=outlier_capping(indiacreditrisk_2$Shares_Outstanding) 
+indiacreditrisk_2$EquityFaceValue=outlier_capping(indiacreditrisk_2$EquityFaceValue) 
+indiacreditrisk_2$EPS=outlier_capping(indiacreditrisk_2$EPS) 
+indiacreditrisk_2$AdjustedEPS=outlier_capping(indiacreditrisk_2$AdjustedEPS) 
+indiacreditrisk_2$Tot_Liabilities=outlier_capping(indiacreditrisk_2$Tot_Liabilities) 
+
+#lapply(seq_along(indiacreditrisk_2[,-c(49)]), function(x){
+# boxplot(indiacreditrisk_2[[x]], main = paste("Title : ", colnames(indiacreditrisk_2))[[x]])
+#})
+
+summary(indiacreditrisk_2)
+
+
+boxplot(indiacreditrisk_2[,-c(44,49)],las=2)
+# excluding investments, share outstanding and default column as the value range is very high
+
+
+```
+
+OUTLIER TREATMENT FOR VALIDATION DATASET
+```{r}
+names(indiacreditrisk_val)
+
+
+#change to easier column names
+colnames(indiacreditrisk_val) = c("Num", "NN","TotAssests", "NW", "TotIncome", "ChangeinStock%","TotExpenses", "PAT", "PBDITA", "PBT", "CashProfit","PBDITA_TotIncome", "PBD_TotIncome", "PAT_TotIncome", "CashProfit_TotIncome", "PAT_NW","Sales", "Income_FinServ","Income_Other","TotCapital","ReserveFunds","Deposits", "Borrowings", "Curr_Liabilities","Deferred_TaxLiability","ShareHolderFunds","RetainedProfits_Cumulative", "Capital_employed","TolTNW","TtlTNW","Contingent_LiabilitiesNW","Contingent_Liabilities","Net_FixedAssets","Investments","Curr_Assets","Capital_NW","Quick_Ratio","Curr_Ratio","Debt-to-Equity_Ratio","Cash-to-Curr_Liabilities","Cash-to-AvgCost_Sales_PerDay","Creditors_TurnOver","Debtors_TurnOver","FinishedfGoods_TurnOver","WIP_TurnOver", "RawMaterial_TurnOver", "Shares_Outstanding",   "EquityFaceValue","EPS","AdjustedEPS","Tot_Liabilities","PE_on_BSE") 
+
+# we drop Deposits (22), PE_on_BSE (52)  columns proceed with treating outliers and imputing NAs in other columns.
+
+
+#Creating Default ('NN') as factor type variable 
+indiacreditrisk_val$NN=as.factor(indiacreditrisk_val$NN)
+
+str(indiacreditrisk_2)
+#Creating other column that are as character as numeric type variable 
+indiacreditrisk_val$Creditors_TurnOver = as.numeric(indiacreditrisk_val$Creditors_TurnOver)
+indiacreditrisk_val$Debtors_TurnOver = as.numeric(indiacreditrisk_val$Debtors_TurnOver)
+indiacreditrisk_val$FinishedfGoods_TurnOver = as.numeric(indiacreditrisk_val$FinishedfGoods_TurnOver)
+indiacreditrisk_val$WIP_TurnOver = as.numeric(indiacreditrisk_val$WIP_TurnOver)
+indiacreditrisk_val$RawMaterial_TurnOver = as.numeric(indiacreditrisk_val$RawMaterial_TurnOver)
+indiacreditrisk_val$Shares_Outstanding = as.numeric(indiacreditrisk_val$Shares_Outstanding)
+indiacreditrisk_val$EquityFaceValue = as.numeric(indiacreditrisk_val$EquityFaceValue)
+
+indiacreditrisk_val2 = indiacreditrisk_val[,-c(1,22,52)]
+str(indiacreditrisk_val2)
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+indiacreditrisk_val2$TotAssests=outlier_capping(indiacreditrisk_val2$TotAssests) 
+indiacreditrisk_val2$NW=outlier_capping(indiacreditrisk_val2$NW) 
+indiacreditrisk_val2$TotIncome=outlier_capping(indiacreditrisk_val2$TotIncome) 
+indiacreditrisk_val2$'ChangeinStock%'=outlier_capping(indiacreditrisk_val2$'ChangeinStock%') 
+indiacreditrisk_val2$TotExpenses=outlier_capping(indiacreditrisk_val2$TotExpenses) 
+indiacreditrisk_val2$PBDITA=outlier_capping(indiacreditrisk_val2$PBDITA) 
+indiacreditrisk_val2$PAT=outlier_capping(indiacreditrisk_val2$PAT) 
+indiacreditrisk_val2$PBT=outlier_capping(indiacreditrisk_val2$PBT) 
+indiacreditrisk_val2$CashProfit=outlier_capping(indiacreditrisk_val2$CashProfit) 
+indiacreditrisk_val2$PBDITA_TotIncome=outlier_capping(indiacreditrisk_val2$PBDITA_TotIncome) 
+indiacreditrisk_val2$PBD_TotIncome=outlier_capping(indiacreditrisk_val2$PBD_TotIncome)
+indiacreditrisk_val2$PAT_TotIncome=outlier_capping(indiacreditrisk_val2$PAT_TotIncome)
+
+indiacreditrisk_val2$CashProfit_TotIncome=outlier_capping(indiacreditrisk_val2$CashProfit_TotIncome) 
+indiacreditrisk_val2$PAT_NW=outlier_capping(indiacreditrisk_val2$PAT_NW) 
+indiacreditrisk_val2$Sales=outlier_capping(indiacreditrisk_val2$Sales) 
+
+indiacreditrisk_val2$Income_FinServ=outlier_capping(indiacreditrisk_val2$Income_FinServ) 
+indiacreditrisk_val2$Income_Other=outlier_capping(indiacreditrisk_val2$Income_Other) 
+indiacreditrisk_val2$TotCapital=outlier_capping(indiacreditrisk_val2$TotCapital) 
+indiacreditrisk_val2$ReserveFunds=outlier_capping(indiacreditrisk_val2$ReserveFunds)
+indiacreditrisk_val2$Borrowings=outlier_capping(indiacreditrisk_val2$Borrowings) 
+indiacreditrisk_val2$Curr_Liabilities=outlier_capping(indiacreditrisk_val2$Curr_Liabilities) 
+indiacreditrisk_val2$Deferred_TaxLiability=outlier_capping(indiacreditrisk_val2$Deferred_TaxLiability) 
+indiacreditrisk_val2$ShareHolderFunds=outlier_capping(indiacreditrisk_val2$ShareHolderFunds) 
+indiacreditrisk_val2$RetainedProfits_Cumulative=outlier_capping(indiacreditrisk_val2$RetainedProfits_Cumulative) 
+indiacreditrisk_val2$Capital_employed=outlier_capping(indiacreditrisk_val2$Capital_employed) 
+indiacreditrisk_val2$TolTNW=outlier_capping(indiacreditrisk_val2$TolTNW) 
+indiacreditrisk_val2$TtlTNW=outlier_capping(indiacreditrisk_val2$TtlTNW)
+indiacreditrisk_val2$Contingent_LiabilitiesNW=outlier_capping(indiacreditrisk_val2$Contingent_LiabilitiesNW) 
+indiacreditrisk_val2$Contingent_Liabilities=outlier_capping(indiacreditrisk_val2$Contingent_Liabilities) 
+indiacreditrisk_val2$Net_FixedAssets=outlier_capping(indiacreditrisk_val2$Net_FixedAssets) 
+indiacreditrisk_val2$Curr_Assets=outlier_capping(indiacreditrisk_val2$Curr_Assets) 
+indiacreditrisk_val2$Capital_NW=outlier_capping(indiacreditrisk_val2$Capital_NW) 
+indiacreditrisk_val2$Quick_Ratio=outlier_capping(indiacreditrisk_val2$Quick_Ratio)
+indiacreditrisk_val2$Curr_Ratio=outlier_capping(indiacreditrisk_val2$Curr_Ratio)
+indiacreditrisk_val2$'Debt-to-Equity_Ratio'=outlier_capping(indiacreditrisk_val2$'Debt-to-Equity_Ratio')
+indiacreditrisk_val2$'Cash-to-Curr_Liabilities'=outlier_capping(indiacreditrisk_val2$'Cash-to-Curr_Liabilities') 
+indiacreditrisk_val2$'Cash-to-AvgCost_Sales_PerDay'=outlier_capping(indiacreditrisk_val2$'Cash-to-AvgCost_Sales_PerDay') 
+indiacreditrisk_val2$'Creditors_TurnOver'=outlier_capping(indiacreditrisk_val2$'Creditors_TurnOver') 
+indiacreditrisk_val2$'Debtors_TurnOver'=outlier_capping(indiacreditrisk_val2$'Debtors_TurnOver') 
+indiacreditrisk_val2$'FinishedfGoods_TurnOver'=outlier_capping(indiacreditrisk_val2$'FinishedfGoods_TurnOver') 
+indiacreditrisk_val2$'WIP_TurnOver'=outlier_capping(indiacreditrisk_val2$'WIP_TurnOver') 
+indiacreditrisk_val2$'RawMaterial_TurnOver'=outlier_capping(indiacreditrisk_val2$'RawMaterial_TurnOver') 
+indiacreditrisk_val2$'Shares_Outstanding'=outlier_capping(indiacreditrisk_val2$'Shares_Outstanding') 
+indiacreditrisk_val2$EquityFaceValue=outlier_capping(indiacreditrisk_val2$EquityFaceValue) 
+indiacreditrisk_val2$EPS=outlier_capping(indiacreditrisk_val2$EPS) 
+indiacreditrisk_val2$AdjustedEPS=outlier_capping(indiacreditrisk_val2$AdjustedEPS) 
+indiacreditrisk_val2$Tot_Liabilities=outlier_capping(indiacreditrisk_val2$Tot_Liabilities) 
+
+
+summary(indiacreditrisk_val2)
+boxplot(indiacreditrisk_val2[,-c(1,32,45)],las=2)
+# excluding investments, share outstanding and default column as the value range is very high
+
+```
+
+REMOVING NAs in TRAIN & TEST DATASET
+
+```{r}
+
+ 
+# Function replaces NA by mean: 
+replace_by_mean <- function(x) {
+  x[is.na(x)] <- mean(x, na.rm = TRUE)
+  return(x)
+}
+
+
+# A function imputes NA observations for categorical variables: 
+
+replace_na_categorical <- function(x) {
+  x %>% 
+    table() %>% 
+    as.data.frame() %>% 
+    arrange(-Freq) ->> my_df
+  
+  n_obs <- sum(my_df$Freq)
+  pop <- my_df$. %>% as.character()
+  set.seed(29)
+  x[is.na(x)] <- sample(pop, sum(is.na(x)), replace = TRUE, prob = my_df$Freq)
+  return(x)
+}
+
+# Use the two functions in train dataset: 
+train_data <- indiacreditrisk_2 %>% 
+  mutate_if(is.numeric, replace_by_mean) %>% 
+  mutate_if(is.factor, replace_na_categorical)
+
+summary(train_data)
+dim(train_data)
+sort(colSums(is.na(train_data)))
+boxplot(train_data[,-c(31,44)],las=2)
+
+
+# Use the two functions in test dataset: 
+test_data <- indiacreditrisk_val2 %>% 
+  mutate_if(is.numeric, replace_by_mean) %>% 
+  mutate_if(is.factor, replace_na_categorical)
+
+summary(test_data)
+dim(test_data)
+sort(colSums(is.na(test_data)))
+boxplot(test_data)
+boxplot(test_data[,-c(32,45)],las=2)
+```
+
+
+
+
+```{r}
+# calculate additional variables important for assessing the credibility of the company
+
+#Profitability Ratio
+    #Gross Profitability Ratio = PROFIT AFTER TAX /Sales
+    train_data$ProfitabilityRatio_new = (train_data$PAT)/(train_data$Sales)
+    test_data$ProfitabilityRatio_new = (test_data$PAT)/(test_data$Sales)
+    
+        
+    #Net Profit MArgin
+    # NPM = Net Income /Sales; Higher the percentage the more profitable the business is
+    train_data$NetProfitMargin_new = (train_data$TotIncome)/(train_data$Sales)
+    test_data$NetProfitMargin_new = (test_data$TotIncome)/(test_data$Sales)
+
+#------------------------------------
+#Liquidity Ratio
+
+    #Liquidity Ratio = Networking Capital / Total Assets
+    train_data$LiquidityRatio_new = (train_data$Capital_NW)/(train_data$TotAssests)
+    test_data$LiquidityRatio_new = (test_data$Capital_NW)/(test_data$TotAssests)
+  
+   # 6.Current ratio (times)= This is the ratio of Current assets and current liabilities. 
+    # train_data$'Curr_Ratio'   - this already available in the dataset    
+  
+    # Quick ratio (times)= This is the ratio of Current assets and current liabilities. 
+    # train_data$'Curr_Ratio'   - this already available in the dataset    
+
+ #------------------------------------   
+  #Leverage Ratios
+    
+
+    # Gearing Ratio: It is calculated as total borrowings divided by net worth of the business
+    # Gearing Ratio = total borrowings/net worth
+    train_data$GearingRatio_new = (train_data$Tot_Liabilities)/(train_data$NW)
+    test_data$GearingRatio_new = (test_data$Tot_Liabilities)/(test_data$NW)
+    
+   
+    # Total Assets Turnover = Sales/Total Assets
+    train_data$TotAssetsTurnover_new = (train_data$Sales)/(train_data$TotAssests)
+    test_data$TotAssetsTurnover_new = (test_data$Sales)/(test_data$TotAssests) 
+    
+     #PAT as % of net worth (Return on Equity Ratio) = Profit after Tax (PAT) ÷ Net worth (NW)
+    #train_data$PAT_NW - this is already there in the dataset
+        
+    
+    # Debt-to-Equity (D/E) Ratio = Total Shareholders’ Equity / Total Liabilities
+    #train_data$'Debt-to-Equity_Ratio'   - this already available in the dataset
+    
+    
+    # Debtors Turnover Ratio: indicates the number of times your debtors pay you over a year; can be used to determine if a company is having difficulties collecting sales made on credit.low debtors turnover ratio implies inefficient management of debtors or less liquid debtors. 
+    
+    # Creditors Turnover Ratio:A high creditors turnover ratio signifies that the creditors are being paid promptly. This shows that your business is highly creditworthy.
+    
+ 
+   #remove column with Inf values and outlier treatment
+    numeric.var <- sapply(train_data, is.numeric)
+train_data <- train_data[is.finite(rowSums(train_data[,numeric.var])),]
+train_data$ProfitabilityRatio_new =outlier_capping(train_data$ProfitabilityRatio_new)
+train_data$NetProfitMargin_new=outlier_capping(train_data$NetProfitMargin_new)
+train_data$LiquidityRatio_new=outlier_capping(train_data$LiquidityRatio_new)
+train_data$GearingRatio_new=outlier_capping(train_data$GearingRatio_new)
+train_data$TotAssetsTurnover_new=outlier_capping(train_data$TotAssetsTurnover_new)
+summary(train_data)
+
+
+    numeric.var <- sapply(test_data, is.numeric)
+test_data <- test_data[is.finite(rowSums(test_data[,numeric.var])),]
+
+test_data$ProfitabilityRatio_new =outlier_capping(test_data$ProfitabilityRatio_new)
+test_data$NetProfitMargin_new=outlier_capping(test_data$NetProfitMargin_new)
+test_data$LiquidityRatio_new=outlier_capping(test_data$LiquidityRatio_new)
+test_data$GearingRatio_new=outlier_capping(test_data$GearingRatio_new)
+test_data$TotAssetsTurnover_new=outlier_capping(test_data$TotAssetsTurnover_new)
+summary(test_data)
+
+
+
+#------------------------------------   
+    
+# Use caret library to find the Top significant variables
+set.seed(1234)
+# load the library
+library(mlbench)
+library(caret)
+
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model
+model <- train(as.factor(NN)~., data=train_data[,-c(53)], method="glm", preProcess="scale", trControl=control)
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance, top = 10)
+plot(importance, top = 20)
+# Following variables are identified as most important
+#"TotAssetsTurnover_new", "PAT_NW", "Debt-to-Equity_Ratio", "TolTNW", "Cash-to-Curr_Liabilities", #"TotCapital",RetainedProfits_Cumulative","ProfitabilityRatio_new","CashProfit","ChangeinStock%", #"Totincome","Contingent_Liabilities", "NetProfitMargin_new","Sales","Income_FinServ", #"PAT_totincome",","Contingent_LiabilitiesNW", "Curr_Ratio", "Shares_Outstanding","TtlNW"
+
+#CHECKING FOR Multi-COlinearity
+
+numeric.var <- sapply(train_data, is.numeric)
+corr.matrix <- cor(train_data[,numeric.var])
+
+corrplot(corr.matrix, order = "FPC", method = "color", type = "lower", tl.cex = 0.7, tl.col = rgb(0, 0, 0))
+#corrplot(corr.matrix, order = "FPC", method =  "number", type = "lower", tl.cex = 0.7, tl.col = rgb(0, 0, 0))
+highlyCorrelated <- caret::findCorrelation(cor(train_data[,numeric.var]),cutoff = 0.7,names = T, verbose = T)
+highlyCorrelated
+
+# [1] "PBDITA"               "NW"                   "ShareHolderFunds"     "CashProfit"          
+# [5] "TotAssests"           "Tot_Liabilities"      "Capital_employed"     "ReserveFunds"        
+# [9] "PBT"                  "PAT"                  "Curr_Assets"          "TotIncome"           
+#[13] "TotExpenses"          "Sales"                "Curr_Liabilities"     "Net_FixedAssets"     
+#[17] "TotCapital"           "PBD_TotIncome"        "PAT_TotIncome"        "CashProfit_TotIncome"
+#[21] "EPS"                  "Debt-to-Equity_Ratio" "EquityMultiplier_new" "TolTNW"              
+#[25] "Quick_Ratio"     
+
+#reducing train data to include only most important variables and remove variables that are highly correlated 
+names(train_data)
+
+ #reducing certain columns in train dataset to include important variables and exclude variables that are highly correlated in test data
+reduced_train_data <-train_data[,c("NN","TotAssetsTurnover_new","PAT_NW","Debt-to-Equity_Ratio","Cash-to-Curr_Liabilities", "TolTNW","TotCapital","RetainedProfits_Cumulative","ProfitabilityRatio_new","CashProfit","ChangeinStock%","TotIncome", "Contingent_Liabilities", "NetProfitMargin_new","Sales","Income_FinServ","PAT_TotIncome","Contingent_LiabilitiesNW","Curr_Ratio", "Shares_Outstanding","TtlTNW","TotExpenses", "Curr_Assets","PBDITA_TotIncome", "NW", "Quick_Ratio","EPS","Debtors_TurnOver","Creditors_TurnOver", "FinishedfGoods_TurnOver", "LiquidityRatio_new","GearingRatio_new")]
+                                
+str(reduced_train_data)
+summary(reduced_train_data)
+ 
+
+#reducing certain columns that are highly correlated in test data
+reduced_test_data <-test_data[,c("NN","TotAssetsTurnover_new","PAT_NW","Debt-to-Equity_Ratio","Cash-to-Curr_Liabilities", "TolTNW","TotCapital","RetainedProfits_Cumulative","ProfitabilityRatio_new","CashProfit","ChangeinStock%","TotIncome", "Contingent_Liabilities", "NetProfitMargin_new","Sales","Income_FinServ","PAT_TotIncome","Contingent_LiabilitiesNW","Curr_Ratio", "Shares_Outstanding","TtlTNW","TotExpenses", "Curr_Assets","PBDITA_TotIncome","NW", "Quick_Ratio","EPS","Debtors_TurnOver","Creditors_TurnOver", "FinishedfGoods_TurnOver", "LiquidityRatio_new","GearingRatio_new")]
+
+
+names(reduced_train_data)
+dim(reduced_train_data)
+names(reduced_test_data)
+dim(reduced_test_data)
+
+#Perform Correlation plot on reduced train and test data
+#Positive correlations are displayed in blue and negative correlations in red color. Color intensity and the size of the circle are proportional to the correlation coefficients.
+numeric.var <- sapply(reduced_train_data, is.numeric)
+corr.matrix <- cor(reduced_train_data[,numeric.var])
+corrplot(corr.matrix, order = "FPC", method = "color", type = "lower", tl.cex = 0.7, tl.col = rgb(0, 0, 0))
+
+numeric.var <- sapply(reduced_test_data, is.numeric)
+corr.matrix <- cor(reduced_test_data[,numeric.var])
+corrplot(corr.matrix, order = "FPC", method = "color", type = "lower", tl.cex = 0.7, tl.col = rgb(0, 0, 0))
+
+plot_intro(reduced_train_data)
+plot_histogram(reduced_train_data)
+plot_intro(reduced_test_data)
+plot_histogram(reduced_test_data)
+```
+
+
+
+
+Build a Logistic Regression model on the important variables 
+Create the rank order on Logit model.
+Rank ordering be done for Test data.
+
+
+```{r}
+attach(reduced_train_data)
+names(reduced_train_data)
+
+#Logistic Regression
+#It is a form of binary regression that takes two possible form, in this case, the defaulters(1) and non-defaulters(0).
+
+#1# Fit logistic regression
+
+
+#MODEL1
+glm.model1 = glm(NN~ . , reduced_train_data , family = binomial(link = 'logit'))
+tidy(glm.model1)
+summary(glm.model1)
+#vif(glm.model1)
+pred.glm.model1 <- predict(glm.model1, newdata = reduced_train_data, type = "response")
+#Confusion matrix
+cm1= table(ActualValue=reduced_train_data$NN, PredictedValue=pred.glm.model1>0.5)
+print("Confusion Matrix for Logistic Regression") 
+calc(cm1)
+
+roc.pred<- prediction(pred.glm.model1, reduced_train_data$NN)
+roc.perf1 = performance(roc.pred, measure = "tpr", x.measure = "fpr")
+plot(roc.perf1, colorize = TRUE, text.adj = c(-0.2,1.7))
+     
+
+#AUC should be more than 0.7 in both the training and validation samples. Should not be a significant difference between AUC score of both these samples. If it is more than 0.8, it is considered as an excellent score.
+
+auc.perf1=as.numeric(performance(roc.pred,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc.perf1))
+
+
+#KS - KS Test measures to check whether model is able to separate events and non-events. In probability of default (bank defaulters) model, it checks whether the credit risk model is able to distinguish between good and bad customers.
+# Ideally, max KS value should be in first three deciles and score lies between 40 and 70. And there should not be more than 10 points (in absolute) difference between training and validation KS score. Score above 70 is susceptible and might be overfitting so rigorous validation is required. 
+
+KS1 <-max(attr(roc.perf1, 'y.values')[[1]]-attr(roc.perf1, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS1))
+
+
+#MODEL2
+
+glm.model2 <- glm(NN~PBDITA_TotIncome + PAT_NW + Curr_Ratio + `Debt-to-Equity_Ratio`+`Cash-to-Curr_Liabilities`+Contingent_Liabilities+EPS+GearingRatio_new+TotAssetsTurnover_new+Income_FinServ+Debtors_TurnOver, family = "binomial", data = reduced_train_data)
+tidy(glm.model2)
+summary(glm.model2)
+vif(glm.model2)
+pred.glm.model2 <- predict(glm.model2, newdata = reduced_train_data, type = "response")
+#Confusion matrix
+cm2= table(ActualValue=reduced_train_data$NN, PredictedValue=pred.glm.model2>0.5)
+print("Confusion Matrix for Logistic Regression") 
+calc(cm2)
+
+roc.pred<- prediction(pred.glm.model2, reduced_train_data$NN)
+roc.perf2 = performance(roc.pred, measure = "tpr", x.measure = "fpr")
+plot(roc.perf2, colorize = TRUE, text.adj = c(-0.2,1.7))
+
+auc.perf2=as.numeric(performance(roc.pred,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc.perf2)) 
+
+#KS
+
+KS2 <-max(attr(roc.perf2, 'y.values')[[1]]-attr(roc.perf2, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS2))
+
+#MODEL 3
+
+glm.model3 <- glm(NN~TotAssetsTurnover_new + ProfitabilityRatio_new + GearingRatio_new +LiquidityRatio_new + ProfitabilityRatio_new + NetProfitMargin_new + PAT_NW + PAT_TotIncome + `Debt-to-Equity_Ratio`+`Cash-to-Curr_Liabilities`+ Curr_Ratio + NW +EPS +TolTNW, family = "binomial", data = reduced_train_data)
+
+tidy(glm.model3)
+summary(glm.model3)
+#vif(glm.model3)
+
+#Confusion matrix
+pred.glm.model3 <- predict(glm.model3, newdata = reduced_train_data, type = "response")
+cm3=table(ActualValue=reduced_train_data$NN, PredictedValue=pred.glm.model3>0.5)
+print("Confusion Matrix for Logistic Regression") 
+calc(cm3)
+
+
+roc.pred<- prediction(pred.glm.model3, reduced_train_data$NN)
+roc.perf3 = performance(roc.pred, measure = "tpr", x.measure = "fpr")
+plot(roc.perf3, colorize = TRUE, text.adj = c(-0.2,1.7))
+
+auc.perf3=as.numeric(performance(roc.pred,"auc")@y.values) 
+print(paste('Area Under the Curve for test Dataset:',auc.perf3)) 
+
+#KS
+
+KS3 <-max(attr(roc.perf3, 'y.values')[[1]]-attr(roc.perf3, 'x.values')[[1]])
+print(paste('K-S Value for test Dataset',KS3))
+
+
+#MODEL VALIDATION ON TEST DATA
+glm.model4 = glm(NN~ . , reduced_test_data , family = binomial(link = 'logit'))
+pred.glm.model4 <- predict(glm.model4, newdata = reduced_test_data, type = "response")
+PredictTest = predict(glm.model1, newdata=reduced_test_data,type="response")
+summary(PredictTest)
+cm4=table(ActualValue=reduced_test_data$NN, PredictedValue=PredictTest>0.5)
+calc(cm4)
+
+```
+
+```{r}
+#Model Performance
+
+library(performance)
+compare_performance(glm.model1, glm.model2, glm.model3, rank = TRUE)
+
+#rank ordering
+library(data.table)
+library(scales)
+# Rank Ordering
+decile <- function(x)
+{
+ deciles <- vector(length=10)
+ for (i in seq(0.1,1,.1))
+ {
+ deciles[i*10] <- quantile(x, i, na.rm=T)
+ }
+ return (
+ ifelse(x<deciles[1], 1,
+ ifelse(x<deciles[2], 2,
+ ifelse(x<deciles[3], 3,
+ ifelse(x<deciles[4], 4,
+ ifelse(x<deciles[5], 5,
+ ifelse(x<deciles[6], 6,
+ ifelse(x<deciles[7], 7,
+ ifelse(x<deciles[8], 8,
+ ifelse(x<deciles[9], 9, 10
+ ))))))))))
+}
+
+#calculate deciles for train and test data
+
+reduced_train_data$deciles <- decile(pred.glm.model1)
+tmp_DT1 = data.table(reduced_train_data)
+
+reduced_test_data$deciles <- decile(pred.glm.model4)
+tmp_DT2 = data.table(reduced_test_data)
+
+ 
+# After the deciles are created, they are ranked.
+rank1 <- tmp_DT1[, list(cnt=length(NN),
+ cnt_resp=sum(NN==1),
+ cnt_non_resp=sum(NN==0)
+), by=deciles][order(-deciles)]
+
+rank1$rrate <- round(rank1$cnt_resp / rank1$cnt,4);
+rank1$cum_resp <- cumsum(rank1$cnt_resp)
+rank1$cum_non_resp <- cumsum(rank1$cnt_non_resp)
+rank1$cum_rel_resp <- round(rank1$cum_resp / sum(rank1$cnt_resp),4);
+rank1$cum_rel_non_resp <- round(rank1$cum_non_resp / sum(rank1$cnt_non_resp),4);
+rank1$ks <- abs(rank1$cum_rel_resp - rank1$cum_rel_non_resp) * 100;
+rank1$rrate <- percent(rank1$rrate)
+rank1$cum_rel_resp <- percent(rank1$cum_rel_resp)
+rank1$cum_rel_non_resp <- percent(rank1$cum_rel_non_resp)
+newtrainRank <- rank1
+
+rank2 <- tmp_DT2[, list(cnt=length(NN),
+ cnt_resp=sum(NN==1),
+ cnt_non_resp=sum(NN==0)
+), by=deciles][order(-deciles)]
+
+rank2$rrate <- round(rank2$cnt_resp / rank2$cnt,4);
+rank2$cum_resp <- cumsum(rank2$cnt_resp)
+rank2$cum_non_resp <- cumsum(rank2$cnt_non_resp)
+rank2$cum_rel_resp <- round(rank2$cum_resp / sum(rank2$cnt_resp),4);
+rank2$cum_rel_non_resp <- round(rank2$cum_non_resp / sum(rank2$cnt_non_resp),4);
+rank2$ks <- abs(rank2$cum_rel_resp - rank2$cum_rel_non_resp) * 100;
+rank2$rrate <- percent(rank2$rrate)
+rank2$cum_rel_resp <- percent(rank2$cum_rel_resp)
+rank2$cum_rel_non_resp <- percent(rank2$cum_rel_non_resp)
+newtestRank <- rank2
+
+# Decile Comparison
+# cut_p returns the cut internal for each observation
+cut_ptrain = with(newtrainRank,
+cut(pred.glm.model1, breaks = quantile(pred.glm.model1, prob=seq(0,1,0.1)), include.lowest = T))
+cut_ptest = with(newtestRank,
+cut(pred.glm.model4, breaks = quantile(pred.glm.model4, prob=seq(0,1,0.1)), include.lowest = T))
+levels(cut_ptrain)
+levels(cut_ptest)
+reduced_train_data$rank1 = factor(cut_ptrain, labels = 1:10)
+reduced_test_data$rank2 = factor(cut_ptest, labels = 1:10)
+
+#Get aggregated data
+mean.obs.train = aggregate(NN ~ reduced_train_data$rank1, data = reduced_train_data, mean)
+mean.pred.train = aggregate(pred.glm.model1 ~ reduced_train_data$rank1, data = reduced_train_data, mean)
+mean.obs.val = aggregate( NN ~ reduced_test_data$rank2, data = reduced_test_data, mean)
+mean.pred.val = aggregate(pred.glm.model4 ~ reduced_test_data$rank2, data = reduced_test_data, mean)
+
+
+#Get aggregated data
+mean.obs.train = aggregate(NN ~ newtrainRank$rank1, data = newtrainRank, mean)
+mean.pred.train = aggregate(pred.glm.model1 ~ newtrainRank$rank1, data = newtrainRank, mean)
+mean.obs.val = aggregate( NN ~ newtestRank$rank2, data = newtestRank, mean)
+mean.pred.val = aggregate(pred.glm.model4 ~ newtestRank$rank2, data = newtestRank, mean)
+
+# plot the mean vs deciles
+par(mfrow=c(1,2))
+plot(mean.obs.train[,2], type="b", col="black", ylim=c(0,0.8), xlab="Decile", ylab="Prob")
+lines(mean.pred.train[,2], type="b", col="red", lty=2)
+title(main="Training Sample")
+plot(mean.obs.val[,2], type="b", col="black", ylim=c(0,0.8), xlab="Decile", ylab="Prob")
+lines(mean.pred.val[,2], type="b", col="red", lty=2)
+title(main="Validation Sample")
+
+
+```
+
+
+```{r}
+
+# #function for calculating the FNR,FPR,Accuracy
+calc <- function(cm){
+  TN = cm[1,1]
+  FP = cm[1,2]
+  FN = cm[2,1]
+  TP = cm[2,2]
+  # #calculations
+  print(paste0('Accuracy :- ',((TN+TP)/(TN+TP+FN+FP))*100))
+  print(paste0('FNR :- ',((FN)/(TP+FN))*100))
+  print(paste0('FPR :- ',((FP)/(TN+FP))*100))
+  print(paste0('precision :-  ',((TP)/(TP+FP))*100)) 
+  print(paste0('recall//TPR :-  ',((TP)/(TP+FP))*100))
+  print(paste0('Sensitivity :-  ',((TP)/(TP+FN))*100))
+  print(paste0('Specificity :-  ',((TN)/(TN+FP))*100))
+  plot(cm)
+}
+```
+
+

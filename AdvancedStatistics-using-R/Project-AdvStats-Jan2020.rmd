@@ -1,0 +1,290 @@
+```{r}
+setwd("C:/DATA/R-prog/wd/Datasets")
+library(readr)
+library(readxl)
+allgreens=read_excel("Dataset_All Greens Franchise.xls")
+#To view your dataset in R window
+## View(allgreens)
+head(allgreens, 10)
+
+
+#How much is the data? Dimensions of the data
+nrow(allgreens)# Number of Samples
+ncol(allgreens)# Number of independent variables
+dim(allgreens)
+#total no of records :[1] 27 obs. of  6 variables:
+
+
+#by attaching you can call variables directly (you could avoid using $)
+attach(allgreens)
+
+#datatype for each variable
+str(allgreens)
+class(X1) #X1 = Annual net sales/$1000  is numeric
+class(X2) #X2 = number sq. ft./1000 is numeric
+class(X3) #X3 = inventory/$1000  is numeric
+class(X4) #X4 = amount spent on advertising/$1000  is numeric
+class(X5) #X5 = size of sales district/1000 families  is numeric
+class(X6) #X6 = number of competing stores in district is numeric
+
+#change the col names
+names(allgreens)[1] <- "AnnualSales"
+names(allgreens)[2] <- "Area"
+names(allgreens)[3] <- "Inventory"
+names(allgreens)[4] <- "AdvAmout"
+names(allgreens)[5] <- "Sales"
+names(allgreens)[6] <- "Stores"
+names(allgreens)
+
+#Summary of data
+summary(allgreens)# 5 point summary
+
+#by attaching you can call variables directly (you could avoid using $)
+attach(allgreens)
+
+##  check for missing Data
+#install.packages("DataExplorer")
+library(DataExplorer)
+library(corrplot)
+ plot_missing(allgreens) ##No missing data
+
+
+
+```
+
+```{r}
+## EDA Exploratory Data Analysis
+## Univariate methods to analyse one variable at a time
+
+## we have one dependent variable and five independent variables
+## The number of data points is only 27
+  plot_histogram(allgreens) 
+  plot_correlation(allgreens) 
+  corrplot(cor(allgreens), method = "number")
+##Inference - correlation matrix implies Annual sales is highly correlated with other 4 variables except Number of Stores
+## Therefore the Problem of Multi-colinearity exists 
+## So we have to perform FA to extract the principal component
+```
+
+```{r}
+SLM2=lm(AnnualSales~Area)
+summary(SLM2)
+anova(SLM2)
+## Multiple R-squared:  0.7994, F-statistic: 99.63 on 1 and 25 DF; p-value: 3.33e-10
+## Inference - No of Sales is significantly dependent on the area of stores 
+# meaning the linear model of Sales depending on Area is robust and statistically valid.
+
+SLM3=lm(AnnualSales~Inventory)
+summary(SLM3)
+anova(SLM3)
+## Multiple R-squared:  0.894, F-statistic: 210.8 on 1 and 25 DF; p-value: 1.093e-13
+## Inference - No of Sales is significantly dependent on the Inventory in stores 
+# meaning the linear model of Sales depending on Inventory is robust and statistically valid.
+
+SLM4=lm(AnnualSales~AdvAmout)
+summary(SLM4)
+anova(SLM4)
+
+
+## Multiple R-squared:  0.8354; F-statistic: 126.9 on 1 and 25 DF; p-value: 2.745e-11
+## Inference - No of Sales is significantly dependent, but not as much as other variables,  on the AdvAmout in stores 
+# meaning the linear model of Sales depending on AdvAmout is robust and statistically valid.
+
+SLM5=lm(AnnualSales~Sales)
+summary(SLM5)
+anova(SLM5)
+
+## Multiple R-squared:  0.9095, F-statistic: 251.3 on 1 and 25 DF, p-value: 1.496e-14; 
+## Signif. codes: ‘***’ 
+## Inference -  No of Sales is significantly dependent on the number of stores in a district
+# meaning the linear model of Sales depending on Stores is robust and statistically valid.
+
+
+SLM6=lm(AnnualSales~Stores)
+summary(SLM6)
+anova(SLM6)
+
+## Multiple R-squared:  0.8322, F-statistic:   124 on 1 and 25 DF; p-value: 3.516e-11; 
+## Signif. codes: ‘***’ 
+## Inference -  No of Sales is significantly dependent on the number of stores in a district
+# meaning the linear model of Sales depending on Stores is robust and statistically valid.
+
+
+#histogram plots..shape of the histogram is an important observation
+hist(AnnualSales, main="AnnualSales in $1000", col = "grey")
+boxplot(AnnualSales, main="AnnualSales", sub=paste("Outlier rows: ", boxplot.stats(AnnualSales)$out))  # box plot for 'AnnualSales'
+hist(Area,col="blue")
+boxplot(Area, main="Area", sub=paste("Outlier rows: ", boxplot.stats(Area)$out))  # box plot for 'AnnualSales'
+
+hist(AdvAmout,col="blue")
+boxplot(AdvAmout, main="AdvAmout", sub=paste("Outlier rows: ", boxplot.stats(AdvAmout)$out))  # box plot for 'AnnualSales'
+
+hist(Inventory,col="blue")
+boxplot(Inventory, main="Inventory", sub=paste("Outlier rows: ", boxplot.stats(Inventory)$out))  # box plot for 'AnnualSales'
+
+hist(Sales,col="blue")
+boxplot(Sales, main="Sales", sub=paste("Outlier rows: ", boxplot.stats(Sales)$out))  # box plot for 'AnnualSales'
+
+hist(Stores,col="blue")
+boxplot(Stores, main="Stores", sub=paste("Outlier rows: ", boxplot.stats(Stores)$out))  # box plot for 'AnnualSales'
+
+
+```
+
+
+```{r}
+## Bivariate analysis to analyse two or more variables and examine their underlying relationships.
+
+
+SLMb1=lm(AnnualSales~(Area+Inventory+AdvAmout+Sales+Stores))
+summary(SLMb1)
+anova(SLMb1)
+
+## Multiple R-squared:  0.9932, F-statistic: 611.6 on 5 and 21 DF, p-value: < 2.2e-16
+## Inference - No of Sales is significantly dependent on all variables
+## we need to check for multi-colinerity problem
+
+## Use Variance Infation factor to check for multi-colinerity
+library(car)
+vif(SLMb1)
+## Results
+##      Area Inventory  AdvAmout     Sales    Stores 
+##  4.240914 10.122480  7.624391  6.912318  5.818768 
+## the variables with  very high VIF (typically >4) means that we could drop that variable and and build
+## a new model; So here we can remove the Inventory, which has vry high VIF and re-build new model
+
+SLMb2=lm(AnnualSales~(Area+AdvAmout+Sales+Stores))
+summary(SLMb2)
+anova(SLMb2)
+## Multiple R-squared:  0.9902, F-statistic: 555.4 on 4 and 22 DF, p-value: < 2.2e-16
+vif(SLMb2)
+
+## Results 
+## Area       AdvAmout    Sales     Stores 
+## 3.579850   3.795323    5.861520 5.468943 
+
+## This model is better, but there is still room for filtering out Sales variable
+## we can still drop the Sales variable as its VIF > 4
+
+SLMb3=lm(AnnualSales~(Area+AdvAmout+Stores))
+summary(SLMb3)
+anova(SLMb3)
+## Multiple R-squared:  0.9602, 184.9 on 3 and 23 DF, p-value: < 3.088e-16
+vif(SLMb3)
+## Results 
+##     Area  AdvAmout   Stores 
+## 2.657032  3.760743   3.996868 
+
+## Dropping the Outliers
+
+cooks.distance(SLMb3)
+## provides how far the the obs are from the mean values
+## eliminate data points that are 4 times far from the mean
+cd <- cooks.distance(SLMb3)
+which(cd > 4*mean(cd))
+## Results - 27 ; only one outlier ; we can drop 27 as outlier
+
+allgreens2<- allgreens[-c(27),]
+dim(allgreens2)
+## result - [1] 26  6 (26 obs 6 col)
+
+##build model again and check
+SLMb4=lm(AnnualSales~(Area+AdvAmout+Stores), data=allgreens2)
+summary(SLMb4)
+anova(SLMb4)
+##Multiple R-squared:  0.977,F-statistic: 311.4 on 3 and 22 DF,  p-value: < 2.2e-16
+
+
+```
+
+```{r}
+## Now lets use PCA and FA to resove multicollinearity and build better model;
+## we wil need to remove the dependent variable first;
+##  There are several functions from different packages for performing PCA :
+## ??? The functions prcomp() and princomp() from the built-in R stats package; 
+##  PCA() from FactoMineR package.??? dudi.pca() from ade4 package
+
+library("factoextra")
+allgreens3 <- allgreens[,-1]
+dim(allgreens3)
+View(allgreens3)
+head(allgreens3)
+
+##Cor matrix of allgreens3
+mat_allgreens3  <- as.matrix(allgreens3)
+corrplot(cor(mat_allgreens3))
+
+##PCA on the new matrix
+pca_allgreens <- princomp(~mat_allgreens3, scores = TRUE, cor = TRUE)
+pca_allgreens
+summary(pca_allgreens)
+
+## From the output we can see that 86.2%, of the variation in the dataset is explained by the first ## component alone,
+## Also only Comp1 has  Eigen value of more than 1
+
+## Use Kaiser method
+## any component with Eigen value greater than 1 is significant; rest can be dropped
+plot(pca_allgreens, type="line")
+## By plotting we can see only 1 component is significant
+
+screeplot(pca_allgreens)
+## From the scree plot we can see that the amount of variation explained drops dramatically after the ## first component. This suggests that just one component may be sufficient to summarise the data.
+
+## Now perform FACTOR ANALYSIS
+library(GPArotation)
+library(psych)
+
+pca_load_allgreens <-  loadings(pca_allgreens)
+print(pca_load_allgreens, digits = 3, cutoff = 0.4, sort=TRUE)
+fact_allgreens <- fa(r=mat_allgreens3, nfactors=2, rotate="varimax", fm="pa")
+fact_allgreens
+fa.diagram(fact_allgreens)
+
+fact_allgreens <- fa(r=mat_allgreens3, nfactors=1, rotate="varimax", fm="pa")
+fact_allgreens
+fa.diagram(fact_allgreens)
+dim(fact_allgreens)
+biplot(fact_allgreens, scale=0)
+#
+
+```
+
+```{r}
+##---------------------------------------------------
+pc_allgreens <- prcomp(allgreens, scale = TRUE)
+names(pc_allgreens)
+## [1] "sdev"     "rotation" "center"   "scale"    "x"     
+
+head(unclass(pc_allgreens$rotation)[, 1:6])
+summary(pc_allgreens)
+## this porvides "Proportion of Variance" - PC1 factor has 88.4%, while other are less than 10% - there fore we use PC1 to build model
+
+## variance retained by each principal component can be obtained as follows :
+
+# Eigenvalues
+eig <- (pc_allgreens$sdev)^2
+# Variances in percentage
+variance <- eig*100/sum(eig)
+# Cumulative variances
+cumvar <- cumsum(variance)
+eig.allgreens.active <- data.frame(eig = eig, variance = variance,
+ cumvariance = cumvar)
+head(eig.allgreens.active)
+
+
+allgreens_2<- data.frame(allgreens[,1], pc_allgreens$x[,1])
+names(allgreens_2)
+
+colnames(allgreens_2) <- c("AnnualSales", "PC1")
+SLMb3 <- lm(AnnualSales ~ PC1, data=allgreens_2)
+summary(reg3)
+## Multiple R-squared:  0.99, F-statistic: 2469 on 1 and 25 DF, p-value: < 2.2e-16
+
+biplot(pc_allgreens, scale=0)
+prin_comp$rotation
+
+
+
+```
+
+

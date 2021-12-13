@@ -1,0 +1,159 @@
+```{r}
+#Loading relevant libraries for current session
+library(readr)
+library(readxl)
+library(DataExplorer)
+library(arules)
+library(arulesViz)
+library(rfm)
+library(ggplot2)
+library(tseries)
+library(seasonal)
+library(lubridate)
+
+#Reading the file in R
+setwd("D:/DATA/Personal/Data-Analytics/R-prog/learning/Downloaded/Module-MRA/Project")
+getwd()
+
+#original dataset in csv format
+data1=read_csv("Cafe Coffee Night.csv")
+summary(data1)
+str(data1)
+head(data1)
+data1$Category <- as.factor(data1$Category)
+data1$`Item Desc` <- as.factor(data1$`Item Desc`)
+summary(data1)
+### Concatenate two string columns
+
+data1$Date_time <- paste(data1$Date,data1$Time)
+View(data1)
+
+
+
+data2 = data1[,-c(1,4)]
+summary(data2)
+#Convert Date to an R Date Class
+
+## current time
+#now <- Sys.time()
+#class(now)
+## display it in ISO 8601 format
+#print(now)
+## current date
+#today <- Sys.Date()
+#class(today)
+#print(today)
+
+class(data2$Date_time)
+parse_date_time("01-Apr-10 13:15:11", orders="dmy HMS")
+parse_date_time(data2$Date_time, orders="dmy HMS")
+data2$Date_time2 <- dmy_hms(data2$Date_time)
+class(data2$Date_time2)
+
+month(data2$Date_time2)
+
+data3 = data2[,-c(9)]
+summary(data3)
+attach(data3)
+
+# Write data to txt file: tab separated values
+# sep = "\t"
+write.table(data3, file = "data3.txt", sep = "\t",
+            row.names = TRUE, col.names = NA)
+
+# plot the data using ggplot
+ggplot(data = data3, aes(x = month(Date_time2), y = Quantity)) +
+      geom_bar(stat = "identity", fill = "purple") +
+      labs(title = "Monthly Data",
+           subtitle = "Quantity vs Month",
+           x = "Date_time", y = "Quantity")
+
+
+ggplot(data3) + geom_line(aes(Date_time2, Quantity, group = Category, color = Quantity), 
+    alpha = 0.3) + facet_wrap(~Category)
+
+```
+
+
+```{r}
+
+### Histogram of variables 
+
+plot_histogram(data2,geom_histogram_args = list(fill="blue"),
+               theme_config = list(axis.line = element_line(size = 1, colour = "green"), strip.background = element_rect(color = "red", fill = "yellow")))  ## checking the distribution of variables 
+
+
+```
+
+
+```{r}
+mydata1 <- split(data3$`Item Desc`, data3$`Bill Number`)
+
+##converting data to transactions
+tData <- as (mydata1, "transactions")
+summary(tData)
+View(tData)
+##inspect(tData) ##do not run as we have massive dataset
+
+##Most frequent items
+itemFrequency(tData, type = "relative")
+itemFrequencyPlot(tData,topN = 10)
+
+
+# aggregated data
+rules = apriori(tData, parameter=list(support=0.001, confidence=0.1))
+#rules = apriori(tData, parameter=list(support=0.005, confidence=0.8, minlen = 3))
+##rules = apriori(tData, parameter=list(support=0.005, confidence=0.8, maxlen = 4))
+
+
+# Show only particular product rules 
+##inspect( subset( rules, subset = rhs %pin% "Product H" )) 
+
+
+# Sort by Lift
+rules.sorted <-sort(rules, by="confidence", decreasing=FALSE)
+inspect(rules.sorted[1:30])
+inspect(head(rules.sorted, n = 10, by ="lift"))
+ head(quality(rules.sorted))
+
+View(rules.sorted[1:30])
+# Get Summary Information
+summary(rules.sorted)
+
+#Convert rules into data frame 
+rules3 = as(rules.sorted, "data.frame") 
+# Write data to txt file: tab separated values
+# sep = "\t"
+write.table(rules3, file = "Market_Basket_analysis2.csv", sep = ",",
+            row.names = TRUE, col.names = NA)
+
+# subrules
+ subrules <- rules.sorted[quality(rules)$confidence > 0.8]
+ subrules
+ 
+#Visualization
+library(arulesViz)
+plot(rules.sorted,method="graph")
+plot(rules.sorted)
+plot(rules.sorted, method = "two-key plot")
+
+plot(head(rules.sorted, n = 10, by ="lift"), method = "graph", shading = NA)
+
+sel <- plot(rules.sorted, measure=c("support", "lift"), method = "graph",shading = "confidence", interactive = TRUE)
+
+plot(rules.sorted, method = "grouped", control = list(k = 50))
+method = "paracoord"
+plot(rules, method = "paracoord", control = list(k = 50),reorder=TRUE)
+
+library(colorspace) # for sequential_hcl
+plot(rules.sorted, control = list(col=sequential_hcl(100)))
+plot(rules.sorted, col=sequential_hcl(100))
+plot(rules.sorted, col=grey.colors(50, alpha =.8))
+
+## The following techniques work better with fewer rules
+subrules <- subset(rules, lift>2.5)
+summary(subrules)
+  
+plot(subrules, method="grouped")
+
+```

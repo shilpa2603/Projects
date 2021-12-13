@@ -1,0 +1,360 @@
+
+```{r include=FALSE}
+#Replace the below command to point to your working directory
+setwd ("C:/DATA/R-prog/learning/Downloaded/Module5-PredictiveModelling/Project")
+getwd()
+```
+
+```{r}
+
+##loading libraries required for the project
+
+library(readxl)
+library(caret)
+library(stats)
+library(corrplot)
+library(DataExplorer)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(cluster)
+library(car)
+library(ROCR)
+library(caTools)
+library(class)
+library(lattice)
+library(e1071)
+library(class)
+
+```
+
+
+STEP1: DATA LOADING AND TRANSFORMATION
+
+Check for defects in the data such as missing values, null values, and outliers
+
+```{r}
+
+
+#loading the data set into the variable trainDS1
+
+ds3 = read_excel("Cellphone-1.xlsx")
+head(ds3)
+View(ds3)
+dim(ds3)
+str(ds3)
+summary(ds3)
+attach(ds3)
+
+```
+
+
+
+```{r}
+
+## check for missing values
+any(is.na(ds3))
+sapply(ds3, function(x) {y = ifelse(x == "?", NA,x); sum(is.na(y))})
+
+ds3$Churn = as.factor(ds3$Churn)
+ds3$ContractRenewal = as.factor(ds3$ContractRenewal)
+ds3$DataPlan = as.factor(ds3$DataPlan)
+ds3$CustServCalls = as.factor(ds3$CustServCalls)
+
+
+
+## converting Weeks into months category
+ds3$wkcategory <- cut(ds3$AccountWeeks, 
+                   breaks=c(0, 26, 54, 78, 104, 130, 156, 182,208,234, 260), 
+                   labels=c("6","6-12","12-18", "18-24", "24-30", "30-36", "36-42", "42-48", "48-54", "54-60"))
+str(ds3)
+
+summary(ds3)
+
+## make a new dataset ds2 excluding the AccountWeeks column
+
+ds2 <- ds3[,c(1,3:12)]
+View(ds2)
+str(ds2)
+
+summary(ds2)
+
+##Normalizing the data set - ds2
+
+preproc1 <- preProcess(ds2, method=c("center", "scale"))
+ 
+ds1 <- predict(preproc1, ds2)
+ 
+summary(ds1)
+```
+
+Histogrm plotc for continous variables
+```{r}
+
+### Histogram of variables 
+plot_histogram(ds1,geom_histogram_args = list(fill="blue"),
+               theme_config = list(axis.line = element_line(size = 1, colour = "green"), strip.background = element_rect(color = "red", fill = "yellow")))  ## checking the distribution of variables 
+
+```
+
+
+Bar plots of categorical variables
+
+```{r}
+
+p1 <- ggplot(ds1, aes(x=Transport)) + ggtitle("Transport") + xlab("Transport") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p2 <- ggplot(ds1, aes(x=Gender)) + ggtitle("Gender") + xlab("Gender") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p3 <- ggplot(ds1, aes(x=MBA)) + ggtitle("MBA") + xlab("MBA") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p4 <- ggplot(ds1, aes(x=license)) + ggtitle("license") + xlab("license") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.5) + ylab("Percentage") + theme_minimal()
+p5 <- ggplot(ds1, aes(x=Engineer)) + ggtitle("Engineer") + xlab("Engineer") +
+  geom_bar(aes(y = 100*(..count..)/sum(..count..)), width = 0.2) + ylab("Percentage") + theme_minimal()
+grid.arrange(p1, p2, p3, p4, p5, ncol=2)
+
+```
+Box plot for bivariate analysis
+
+
+
+```{r}
+
+## FILTERING HTHE CUSTOMERS WHO HAVE NOT RENEWED THE SERVICE
+newdt1 <- ds1 %>% 
+  filter( Churn == 1)
+View(newdt1)
+
+plot_boxplot(newdt1, by = "Churn", 
+             geom_boxplot_args = list("outlier.color" = "red"))
+
+newdt2 <- ds1 %>% 
+  filter( Churn == 0)
+View(newdt2)
+
+plot_boxplot(newdt2, by = "Churn", 
+             geom_boxplot_args = list("outlier.color" = "red"))
+
+
+
+p1 = ggplot(ds2, aes(wkcategory, fill=Churn)) +  geom_bar(position = "dodge")
+p2 = ggplot(ds2, aes(MonthlyCharge, fill=Churn)) + geom_histogram(bins = 50, fill=c("blue"))
+p3 = ggplot(ds2, aes(CustServCalls, fill=Churn))+geom_bar(position = "dodge")
+p4 = ggplot(ds2, aes(RoamMins, fill=Churn)) + geom_histogram(bins = 50, fill=c("blue")) 
+grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+
+
+
+```
+
+Correlation between numeric variables
+```{r}
+
+numeric.var <- sapply(ds1, is.numeric)
+corr.matrix <- cor(ds1[,numeric.var])
+corrplot(corr.matrix, main="\n\nCorrelation Plot for Numerical Variables", method="number")
+
+```
+
+Logistic Regression
+First, we split the data into training and testing sets:
+```{r}
+##library(caret)
+
+## sampling 70% of data for training the algorithms using random sampling on the ds2 dataset 
+
+set.seed(600)
+split_index = createDataPartition(ds1$Churn, p = 0.7, list = FALSE)
+trainset = ds1[split_index,]
+validation_set  = ds1[-split_index,]
+
+#Checking Train Set Target Class
+table(trainset$Churn)
+##  0    1 
+## 1995  319 
+
+prop.table(table(trainset$Churn))
+##      0     1 
+##  0.855 0.145 
+
+#  As we see, this data set contains only 14% of positive cases and 86% of negative cases. This is a  imbalanced data set. 
+
+```
+
+```{r}
+
+
+### ##----------------------- LOGISTIC REGRESSION ----------------------- ## ###
+
+##multi-variate
+logit_model = glm(Churn ~., data = trainset, family =binomial(link="logit")) 
+summary(logit_model)
+
+##exclude the factor variables
+
+logit_model2 = glm(Churn ~ ContractRenewal + DayMins + MonthlyCharge + 
+    OverageFee + RoamMins, data = trainset, family =binomial) 
+summary(logit_model2)
+
+##VIF
+
+vif(logit_model)
+vif(logit_model2)
+
+
+## ANOVA
+
+anova(logit_model, test="Chisq")
+
+anova(logit_model2, test="Chisq")
+
+#Prediction - model1
+logit_pred = predict(logit_model,newdata = validation_set, type = 'response')
+#Converting Prob to number or class
+
+logit_pred = ifelse(logit_pred > 0.5, 1,0)
+misClasificError <- mean(logit_pred != trainset$Churn)
+print(paste('Logistic Regression Accuracy',1-misClasificError))
+
+##Evaluate the performance of classification model
+print("Confusion Matrix for Logistic Regression"); 
+cm_logit = table(validation_set$Churn, logit_pred)
+summary(cm_logit)
+confusionMatrix(cm_logit)
+calc(cm_logit)
+
+
+#Prediction - model2
+logit_pred = predict(logit_model2,newdata = validation_set, type = 'response')
+#Converting Prob to number or class
+
+logit_pred = ifelse(logit_pred > 0.5, 1,0)
+misClasificError <- mean(logit_pred != trainset$Churn)
+print(paste('Logistic Regression Accuracy',1-misClasificError))
+
+##Evaluate the performance of classification model
+print("Confusion Matrix for Logistic Regression"); 
+cm_logit = table(validation_set$Churn, logit_pred)
+summary(cm_logit)
+confusionMatrix(cm_logit)
+calc(cm_logit)
+
+
+##ROC
+## Mdel 1
+predictROC=predict(logit_model, trainset, type = "response")
+ROCRpred=prediction(predictROC,trainset$Churn)
+ROCRperf=performance(ROCRpred,"tpr","fpr")
+plot(ROCRperf,colorize=TRUE,print.cutoffs.at=seq(0.1,by=0.1))
+
+#Model 2
+predictROC=predict(logit_model2, trainset, type = "response")
+ROCRpred=prediction(predictROC,trainset$Churn)
+ROCRperf=performance(ROCRpred,"tpr","fpr")
+plot(ROCRperf,colorize=TRUE,print.cutoffs.at=seq(0.1,by=0.1))
+```
+
+
+
+
+
+KNN  Classfication
+
+We will first scale the dataset and then cluster the data into two clusters. Later below we will try to choose the optimal number of clusters.
+```{r}
+
+
+ds2.scaled <- scale(ds2[,-c(1,2,3,5,11)])
+##print(ds2.scaled)
+## splitting dataset into train test in the ratio of 70:30 %
+set.seed(233)
+split = createDataPartition(ds2$Churn , p=0.7, list = FALSE)
+
+train.cell = ds2[split,]
+test.cell = ds2[-split,]
+
+##checking dimensions of train and test splits of dataset
+dim(train.cell)
+dim(test.cell)
+table(train.cell$Churn)
+
+
+```
+
+
+KNN
+```{r}
+
+
+##find the optimal cluster
+
+
+totWss=rep(0,8)
+for(k in 1:8){
+  seed=1000
+  set.seed(seed)
+  clust=kmeans(x=trainset[,-c(1,2,3,5,11)], centers=k, nstart=5)
+  
+  ##clusplot(ds2.scaled, clust$cluster,color=TRUE, shade=FALSE, labels=2, lines=1)
+  ##print(clust)
+  totWss[k]=clust$tot.withinss
+}
+plot(c(1:8), totWss, type="b", xlab="Number of Clusters",
+       ylab="sum of 'Within groups sum of squares'") 
+
+## Now a 5-nearest neighbours model with normalization
+knn_Pred = knn(train = trainset[,-c(1,2,3,5,11)],test = validation_set[,-c(1,2,3,5,11)],cl = trainset$Churn, k = 5,prob = T)
+## Confusion Matrix for k-NN
+knn.CM = confusionMatrix(knn.pred, train.cell$Churn, positive = "1")
+knn.CM
+
+
+#Confusion matrix
+cm_knn = table(validation_set$Churn,knn_Pred)
+confusionMatrix(cm_knn)
+calc(cm_knn)
+```
+
+NAIVE BAYES THEOREM
+```{r}
+
+NB.fit = naiveBayes(Churn~., data = trainset, type = 'class')
+NB.fit
+
+NB.pred = predict(NB.fit, validation_set, type = "class")
+
+mean(NB.pred==test.cell$Churn)
+
+#Confusion matrix
+NB.CM = confusionMatrix(NB.pred, validation_set$Churn, positive = "1")
+NB.CM
+
+NB.CM = table(validation_set$Churn,NB.pred)
+confusionMatrix(NB.CM)
+calc(NB.CM)
+```
+
+
+```{r}
+
+# #function for calculating the FNR,FPR,Accuracy
+calc <- function(cm){
+  TN = cm[1,1]
+  FP = cm[1,2]
+  FN = cm[2,1]
+  TP = cm[2,2]
+  # #calculations
+  print(paste0('Accuracy :- ',((TN+TP)/(TN+TP+FN+FP))*100))
+  print(paste0('FNR :- ',((FN)/(TP+FN))*100))
+  print(paste0('FPR :- ',((FP)/(TN+FP))*100))
+  print(paste0('precision :-  ',((TP)/(TP+FP))*100)) 
+  print(paste0('recall//TPR :-  ',((TP)/(TP+FP))*100))
+  print(paste0('Sensitivity :-  ',((TP)/(TP+FN))*100))
+  print(paste0('Specificity :-  ',((TN)/(TN+FP))*100))
+  plot(cm)
+}
+```

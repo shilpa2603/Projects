@@ -1,0 +1,285 @@
+
+
+
+
+```{r}
+library(readr)
+library(readxl)
+library(fpp2)
+library(tseries)
+library(forecast)
+library(data.table)
+library(statsr)
+library(TTR)
+library(tseries)
+library(seasonal)
+```
+
+LOADING DATA
+```{r}
+
+# Read in the data
+data<- forecast::gas
+View(data)
+head(data)
+tail(data)
+class(data)   # checking the class of dataset 
+summary(data)
+any(is.na(data))  #checking for any missing values
+str(data)
+
+ts.plot(data,xlab = "Year", ylab= "Gas Production",
+                main = " Australian Monthly Gas Production 1956 - 1996 ") ## plotting the ts object AU gas dataset 
+
+
+#periodicity or frequency
+frequency(data)
+
+#estimate the trend, seasonal and irregular components of this time series
+data_components <- decompose(data)
+ plot(data_components)
+ 
+ #using library(seasonal)
+data %>% stl(s.window='periodic') %>% autoplot
+seas(data) %>% autoplot
+ 
+ #detect seasonality in plot in detail
+ggseasonplot(data)
+
+ggsubseriesplot(data)
+
+#Dicky Fuller test for Stationarity
+adf.test(data)
+
+```
+
+DATA PREPARATION
+```{r}
+
+
+#filter time series data
+datats <- ts(data, start=c(1970,12), end=c(1996,12), frequency=12)
+summary(datats)
+str(datats)
+monthplot(datats)
+
+
+#decompose data
+#estimate the trend, seasonal and irregular components of this time series
+datats_components <- decompose(datats, type = "additive")
+ plot(datats_components)
+
+  #using library(seasonal)
+datats %>% stl(s.window='periodic') %>% autoplot
+seas(datats) %>% autoplot
+ 
+#Dicky Fuller test for Stationarity
+adf.test(datats)
+
+##p-value = 0.99 ; Since p-value is much greater than significant value of 0.05 
+## we fail to reject the Null Hypothesis Ho (Time series non-stationary)
+## Conclusion - Time series is not-stationary
+
+##decomposed data stored in datats_InTrain1
+datats_1 <- stl(datats, s.window= 7)
+head(datats_1$time.series)
+datats_1_seasonal = datats_1$time.series[,1]  ## seasonal component
+datats_1_trend = datats_1$time.series[,2]    ## trend component
+datats_1_remainder = datats_1$time.series[,3]  ## random component 
+autoplot(datats_1)
+
+
+#remove seasonality
+#METHOD 1
+datats_1_ds <- datats - datats_1_seasonal
+plot(datats_1_ds, ylab= "Gas Production", main = "De-Seasonalized Series- Australian Monthly Gas Production") ## plotting the de-seasonlized data
+
+#METHOD 2
+datats_2_ds = seasadj(datats_1)
+plot(datats_2_ds, ylab= "Gas Production", main = "De-Seasonalized Series- Australian Monthly Gas Production") ## plotting the de-seasonlized data
+
+#Dicky Fuller test for Stationarity
+adf.test(datats_2_ds)
+## Dataset is not stationary
+```
+
+FORECASTING
+```{r}
+
+#prepare training data and test data on DESEASONALIZED DATA
+datatsTrain <- window(datats_2_ds, start=c(1971,1), end=c(1993,12),frequency=12)
+datatsTest <- window(datats_2_ds, start=c(1994,1),end=c(1996,12),frequency=12) #.(last 4 months of 1995+8 months of 1996).
+
+#prepare training data and test data on DESEASONALIZED DATA
+datatsTrain1 <- window(datats, start=c(1971,1), end=c(1994,12),frequency=12)
+datatsTest1 <- window(datats, start=c(1995,9),end=c(1996,12),frequency=12) #.(last 4 months of 1995+8 months of 1996).
+
+
+str(datatsTrain)
+str(datatsTest)
+head(datatsTest)
+tail(datatsTest)
+
+## Plotting the train and Test set 
+autoplot(datatsTrain, series="Train") +
+ autolayer(datatsTest, series="Test") +
+ ggtitle("Australian Monthly Gas Production - Traning and Test data") +
+ xlab("Year") + ylab("Monthly Gas Production") +
+ guides(colour=guide_legend(title="Legend"))
+
+
+##differencing deseasonalized data
+
+datats_stationary = diff(datats_2_ds)
+datats_Diff
+autoplot(datats_Diff)
+
+datats_stationary1 = diff(datats_2_ds, differences = 1)
+autoplot(datats_stationary1)
+#Dicky Fuller test for Stationarity
+adf.test(datats_stationary1)
+
+datats_stationary2 = diff(datats_2_ds, differences = 2)
+autoplot(datats_stationary2)
+#Dicky Fuller test for Stationarity
+adf.test(datats_stationary2)
+
+
+
+##fit the model
+#Run correlation on stationary data
+acf(datats_stationary1, lag.max=50)
+pacf(datats_stationary1, lag.max=50)
+
+
+acf(datats_stationary2, lag.max=50)
+pacf(datats_stationary2, lag.max=50)
+
+
+
+```
+HoltWinters
+
+```{r}
+
+datats_forecast1 <- HoltWinters(datats, gamma=FALSE)
+datats_forecast1
+plot(datats_forecast1)
+```
+
+ARIMA
+Building a manual ARIMA[p,d,q] model with seasonal effects [p,d,q] - [1,1,0]
+
+```{r}
+
+arima_manual = arima(datatsTrain, order = c(1,1,0), seasonal = c(1,1,1),  method = 'ML')
+arima_manual
+
+## Plotting the forecast of manual arima for 12 advance periods
+plot(forecast(arima_manual, h=36), shadecols = "oldstyle")
+
+#Box-Ljung test: This checks whether the residuals of time series data are stationary or not.
+Box.test(arima_manual$residuals, type = "Ljung-Box", lag = 200)
+
+##ACF
+acf(arima_manual$residuals, lag.max = 50)
+
+## Accuracy of the manual arima model 
+accuracy(forecast(arima_manual, 36), datatsTest)
+
+##check on the accuracy of our manual ARIMA model on our test data 
+combined_vc2 <- cbind(datatsTest ,as.data.frame(forecast(arima_manual, h=36))[,1])
+
+str(as.data.frame(forecast(arima_manual, h=12))[,1])
+str(datatsTest)
+ts.plot(combined_vc2, col=c("blue", "red"), main="Manual Arima Model - Gas Production: Actual (blue) vs Forecast (red)")
+
+```
+
+```{r}
+
+arima_manual = arima(datatsTrain, order = c(1,1,1), seasonal = c(1,1,0),  method = 'ML')
+arima_manual
+
+## Plotting the forecast of manual arima for 12 advance periods
+plot(forecast(arima_manual, h=36), shadecols = "oldstyle")
+
+#Box-Ljung test: This checks whether the residuals of time series data are stationary or not.
+Box.test(arima_manual$residuals, type = "Ljung-Box", lag = 200)
+
+##ACF
+acf(arima_manual$residuals, lag.max = 50)
+
+## Accuracy of the manual arima model 
+accuracy(forecast(arima_manual, 36), datatsTest)
+
+##check on the accuracy of our manual ARIMA model on our test data 
+combined_vc2 <- cbind(datatsTest ,as.data.frame(forecast(arima_manual, h=36))[,1])
+
+str(as.data.frame(forecast(arima_manual, h=36))[,1])
+str(datatsTest)
+ts.plot(combined_vc2, col=c("blue", "red"), main="Manual Arima Model - Gas Production: Actual (blue) vs Forecast (red)")
+
+```
+
+ARIMA
+Building a manual ARIMA[p,d,q] model with seasonal effects [p,d,q] - [1,2,0]
+
+```{r}
+
+arima_manual = arima(datatsTrain, order = c(0,1,0), seasonal = c(1,1,1), method = 'ML')
+arima_manual
+
+## Plotting the forecast of manual arima for 12 advance periods
+plot(forecast(arima_manual, h=36), shadecols = "oldstyle")
+
+#Box-Ljung test: This checks whether the residuals of time series data are stationary or not.
+Box.test(arima_manual$residuals, type = "Ljung-Box", lag = 200)
+
+#Run correlation on stationary data
+acf(arima_manual$residuals, lag.max=50)
+
+
+## Accuracy of the manual arima model 
+accuracy(forecast(arima_manual, 36), datatsTest)
+
+##check on the accuracy of our manual ARIMA model on our test data 
+combined_vc2 <- cbind(datatsTest, as.data.frame(forecast(arima_manual, h=36))[,1])
+
+str(as.data.frame(forecast(arima_manual, h=36))[,1])
+str(datatsTest)
+ts.plot(combined_vc2, col=c("blue", "red"), main="Manual Arima Model - Gas Production: Actual (blue) vs Forecast (red)")
+
+```
+
+AUTO ARIMA with seasonal effects
+
+```{r}
+arima_auto = auto.arima(datatsTrain, trace = F, seasonal = T)
+arima_auto
+
+
+## Plotting the forecast of manual arima for 12 advance periods
+plot(forecast(arima_auto, h=36), shadecols = "oldstyle")
+
+
+#Box-Ljung test: This checks whether the residuals of time series data are stationary or not.
+Box.test(arima_auto$residuals, type = "Ljung-Box", lag = 200)
+
+
+##check on the accuracy of our manual ARIMA model on our test data 
+combined_vc2 <- cbind(datatsTest ,as.data.frame(forecast(arima_auto, h=36))[,1])
+#combined_vc2
+ts.plot(combined_vc2, col=c("blue", "red"), main="Gas Production: Actual vs Forecast")
+legend("bottomright", legend=c("Actual", "Forecast"),col=c("blue", "red"), cex=0.8, lty= 1:1)
+
+
+## Accuracy of the Auto arima model 
+accuracy(forecast(arima_auto, 36), datatsTest) 
+```
+
+
+
+
+
+```

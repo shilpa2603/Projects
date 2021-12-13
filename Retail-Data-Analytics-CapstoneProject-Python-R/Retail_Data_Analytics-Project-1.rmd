@@ -1,0 +1,594 @@
+```{r}
+#Loading relevant libraries for current session
+
+toload_libraries <- c("readr","readxl","DataExplorer","dplyr","tidyr", "tidyverse","lubridate","corrplot","corpcor", "ggplot2", "plyr", "scatterplot3d","dplyr", "rpart","ipred", "rpart.plot", "ggplot2", "gridExtra","reshape2","timeSeries", "caret","car","rattle","randomForest","miscTools")
+new.packages <- toload_libraries[!(toload_libraries %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+lapply(toload_libraries, require, character.only= TRUE)
+```
+
+
+Load Dataset
+```{r}
+
+#Reading the file in R
+setwd("E:/DATA/Data-Analytics/R-prog/learning/Downloaded/Capstone-Project/Retail_Data_Analytics")
+getwd()
+#check original dataset
+#feature_dt = read_csv("Features data set.csv")
+#stores_dt = read_csv("stores data-set.csv")
+#sales_dt = read_csv("sales data-set.csv")
+
+
+#joined_df1 <- merge(sales_dt, stores_dt, by.x = "Store", all.x = TRUE, all.y = TRUE)
+#joined_df2 <- merge(joined_df1, feature_dt, by.x = "Store", by.y = "Store", all.x = TRUE, all.y = TRUE)
+
+df<-read_csv("Sales_Store_Feature_dataset.csv")
+summary(df)
+str(df)
+
+```
+
+Transform Dataset
+```{r}
+
+#Convert Date to an R Date Class
+class(df$Date)
+parse_date_time(df$Date, orders="dmy")
+df$Date2 <- dmy(df$Date)
+class(df$Date2)
+#Derive the variable from Date Columns 
+df <- df[,-c(2)]
+df$Week<- week(df$Date2)
+df$Month<- month(df$Date2)
+df$Year<- year(df$Date2)
+
+
+
+#factors
+df$Week<- as.factor(df$Week)
+df$Month<- as.factor(df$Month)
+df$Type <- as.factor(df$Type)
+df$Store <- as.factor(df$Store)
+df$Dept <- as.factor(df$Dept)
+df$IsHoliday<- as.factor(df$IsHoliday)
+
+# Create new factor variable 'HN' to identify Holidays
+ # Filter to get holiday dates 
+hdf <- df %>% filter(df$IsHoliday=="TRUE")
+ulst <- unique(hdf$Date2)
+ulst
+##Super Bowl Code = 1 (week 6,7)
+##Labour Day Code = 2 (week 36,37)
+##Thanksgiving Code = 3 (week 47,48)
+##Christmas Code = 4 (week 52, 53)
+df$HN<- ifelse(df$IsHoliday == 'TRUE' & df$Week == 6,1,
+               ifelse(df$IsHoliday == 'TRUE' & df$Week == 7,1,
+                      ifelse(df$IsHoliday == 'TRUE' & df$Week == 36,2,
+                             ifelse(df$IsHoliday == 'TRUE' & df$Week == 37,2,
+                                    ifelse(df$IsHoliday == 'TRUE' & df$Week == 47,3,
+                                           ifelse(df$IsHoliday == 'TRUE' & df$Week == 48,3,
+                                                  ifelse(df$IsHoliday == 'TRUE' & df$Week == 52,4,
+                                                         ifelse(df$IsHoliday == 'TRUE' & df$Week == 53,4,0) ) )))))) 
+
+df$HN<- as.factor(df$HN)
+df <- df[,-c(2)] # remove Isholiday column
+
+# convert Type variable to numbers
+df$Type<- ifelse(df$Type == "A",1,
+               ifelse(df$Type == "B",2,
+                      ifelse(df$Type == "C",3,0)))
+
+### MarkDowns columns with NA's or negative numbers will be replaced by zeros
+
+df <- df %>%
+  mutate(MarkDown1 = replace_na(MarkDown1,0),
+         MarkDown2 = replace_na(MarkDown2,0),
+         MarkDown3 = replace_na(MarkDown3,0),
+         MarkDown4 = replace_na(MarkDown4,0),
+         MarkDown5 = replace_na(MarkDown5,0),
+         MarkDown1 = replace(MarkDown1,which(MarkDown1 < 0),0),
+         MarkDown2 = replace(MarkDown2,which(MarkDown2 < 0),0),
+         MarkDown3 = replace(MarkDown3,which(MarkDown3 < 0),0),
+         MarkDown5 = replace(MarkDown5,which(MarkDown5 < 0),0))
+
+### Missing Value Ratio plot of variables
+plot_missing(df) 
+any(is.na(df))
+sort(colSums(is.na(df)))
+
+##Negative value of Weekly_Sales were replaced by zeros.
+df <- df %>%
+  mutate(Weekly_Sales = replace(Weekly_Sales, which(Weekly_Sales <0),0))
+aggregate(df[,"Weekly_Sales"], by=df[,c("Type"), drop=FALSE], min)
+
+
+summary(df)
+attach(df)
+lapply(df,class) #list the type of each variable
+```
+
+```{r}
+
+##univariate analysis
+### Histogram of variables 
+
+plot_histogram(df,geom_histogram_args = list(fill="blue"),
+               theme_config = list(axis.line = element_line(size = 1, colour = "green"), strip.background = element_rect(color = "red", fill = "yellow")))  ## checking the distribution of variables 
+ 
+
+
+ggp1 = ggplot(data = df, aes(x = Size))+
+      geom_density(fill = "lightblue", binwidth = 5, colour = "black")+
+      geom_vline(aes(xintercept = median(Size)), linetype = "dashed")
+ggp1
+
+ggp1 = ggplot(data = df, aes(x = Size))+
+      geom_histogram(binwidth = 15000) + facet_grid(Type~.) +
+      geom_vline(aes(xintercept = median(Size)), linetype = "dashed")
+ggp1
+
+
+ggp2 = ggplot(data = df, aes(x = Fuel_Price))+
+      geom_density(fill = "lightblue", binwidth = 10, colour = "black")+
+      geom_vline(aes(xintercept = median(Fuel_Price)), linetype = "dashed")
+ggp2
+
+ggp3 = ggplot(data = df, aes(x = CPI))+
+      geom_density(fill = "lightblue", binwidth = 10, colour = "black")+
+      geom_vline(aes(xintercept = median(CPI)), linetype = "dashed")
+ggp3
+
+
+ ggp4 = ggplot(data = df, aes(x = Unemployment))+
+      geom_histogram(fill = "lightblue", binwidth = 1, colour = "black")+
+      geom_vline(aes(xintercept = median(Unemployment)), linetype = "dashed")
+ggp4 
+
+
+ggp5 = ggplot(data = df, aes(x = Temperature))+
+      geom_histogram(fill = "lightblue", binwidth = 1, colour = "black")+
+      geom_vline(aes(xintercept = median(Temperature)), linetype = "dashed")
+ggp5 
+
+
+
+ggp6 = ggplot(data = df,aes(x = Weekly_Sales)) + geom_histogram() + facet_grid(Type~.) + scale_x_log10()
+ggp6 
+
+```
+
+```{r}
+#DATA SUMMARY
+
+#How many stores, department, store types are present in data? what is aggregate sales by store Type and dept?
+
+
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store"), drop=FALSE], mean)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store"), drop=FALSE], max)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store"), drop=FALSE], min)
+aggregate(df$Weekly_Sales, by=list(Type=df$Store), FUN=sum)
+
+aggregate(df[,"Weekly_Sales"], by=df[,c("Type"), drop=FALSE], mean)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Type"), drop=FALSE], max)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Type"), drop=FALSE], min)
+aggregate(df$Weekly_Sales, by=list(Type=df$Type), FUN=sum)
+
+
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store","Dept"), drop=FALSE], mean)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store","Dept"), drop=FALSE], max)
+aggregate(df[,"Weekly_Sales"], by=df[,c("Store","Dept"), drop=FALSE], min)
+aggregate(df$Weekly_Sales, by=list(Type=df$Dept), FUN=sum)
+
+
+
+
+#What are the total number of departments?
+n_distinct(df$Dept)
+
+#What are the total number of stores?
+n_distinct(df$Store)
+
+
+#Create new variables to detect unique holiday week
+
+
+
+aggregate(df$Weekly_Sales, by=list(Type=df$HN), FUN=sum)
+aggregate(df$Weekly_Sales, by=list(Type=df$HN), FUN=mean)
+
+hol_sales <- df %>% group_by(df$HN) %>% summarize(Weekly_Sales = (sum(Weekly_Sales)/sum(df$Weekly_Sales))*100) %>%
+  ungroup () 
+hol_sales
+
+
+#detect and treat outliers for non holiday records
+
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+df$Weekly_Sales=outlier_capping(df$Weekly_Sales) 
+df$MarkDown1=outlier_capping(df$MarkDown1) 
+df$MarkDown2=outlier_capping(df$MarkDown2) 
+df$MarkDown3=outlier_capping(df$MarkDown3) 
+df$MarkDown4=outlier_capping(df$MarkDown4) 
+df$MarkDown5=outlier_capping(df$MarkDown5) 
+
+boxplot(df,las=2)
+boxplot(df[,c(1,3,7,14)],las=2)
+boxplot(df[,c(8,15)],las=2)
+boxplot(df[,c(4,6)],las=2)
+boxplot(df[,c(9,10,11,12,13)],las=2)
+```
+
+
+```{r}
+
+#Bivariate analysis - Weekly sales distribution by Holiday 
+ggplot(df, aes(x = IsHoliday, y = Weekly_Sales, fill= Type)) +
+  geom_boxplot() +
+  labs(title = "Weekly sales distribution") +
+  ylab('Sales') +
+  theme(legend.position = "right", 
+        legend.title = element_text()) +
+  scale_x_discrete(name = 'Holiday week - No /Yes', 
+                   labels= c('No', 'Yes')) +
+  facet_grid(~ Year, scales="free")
+
+
+df2 <- df[,c("Store", "Weekly_Sales", "Type", "IsHoliday")]
+
+
+box_plot <- ggplot(df2, aes(x = Store, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot(aes(fill = Type), width=0.7, position=position_dodge(width=5.0), outlier.colour = "blue",
+        outlier.shape = 1,
+        outlier.size = 1)+scale_y_continuous(label = scales::dollar, limits = c(-5000, 100000),breaks = seq(-5000, 700000, 50000))+ scale_x_discrete(breaks = seq(0, 46, 1))+
+  theme(axis.text.x  = element_text(angle=-90, hjust=0.5, size=11,colour="black")) +
+   stat_summary(fun = mean, geom = "point", size = 1,color = "steelblue") 
+
+
+box_plot <- ggplot(df2, aes(x = Store, y = Weekly_Sales, color=IsHoliday))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot( width=500, position=position_dodge(width=700), outlier.colour = "blue",outlier.shape = 1,outlier.size = 1)+
+  scale_y_continuous(label = scales::dollar, limits = c(-5000, 100000),breaks = seq(-5000, 700000, 50000))+ 
+  scale_x_discrete(breaks = seq(0, 46, 1))+
+  theme(axis.text.x  = element_text(angle=-90, hjust=0.5, size=12,colour="black")) +
+  facet_grid(~ Store, scales="free")
+
+box_plot <- ggplot(df2, aes(x = Dept, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot( width=3, position=position_dodge(width=10), outlier.colour = "blue",outlier.shape = 1,outlier.size = 1)+
+  scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000),breaks = seq(-5000, 700000, 50000))+ 
+  scale_x_discrete(breaks = seq(0, 81, 1))+
+  theme(axis.text.x  = element_text(angle=-90, hjust=0.5, size=12,colour="black")) 
+
+
+ggplot(df, aes(x = Week, y = Weekly_Sales)) +
+  geom_boxplot(binwidth=1000) +
+  labs(title = "Weekly sales distribution") +
+  ylab('Sales') +
+  theme(legend.position = "right", 
+        legend.title = element_text() ) +   scale_x_discrete(name = 'Holiday week - No /Yes', 
+                   labels= c('No', 'Yes')) +
+  facet_grid(~ Year, scales="free")
+
+ggplot(df, aes(x = HN, y = Weekly_Sales)) +
+  geom_boxplot(binwidth=1000) +
+  labs(title = "Weekly sales distribution during holiday Weeks") +
+  ylab('Sales') +
+  theme(legend.position = "right", 
+        legend.title = element_text()) +
+  scale_x_discrete(name = 'Super Bowl Code = 1, Labour Day Code = 2, Thanksgiving Code = 3, Christmas Code = 4')+
+  facet_grid(~ HN, scales="free")
+
+
+
+ gg  <- ggplot(df, aes(x = Dept, y = Weekly_Sales)) + geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(gg)
+ggsave("df-histogram-demo.pdf", plot = gg)
+
+
+
+
+```
+
+
+
+```{r}
+
+attach(df1)
+numeric.var <- sapply(df1, is.numeric)
+corr.matrix <- cor(df1[,numeric.var])
+par(mfrow=c(5,9))
+ggplot(df1,aes(x = Store, y = Weekly_Sales, color = Holiday)) + facet_wrap(Store~.) + geom_boxplot() + scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000)) 
+
+qplot(x = Weekly_Sales, data = hdf, binwidth = 300) +
+  geom_boxplot(fill = "blue") +
+  theme(axis.text = element_text(angle = 0)) +
+  coord_flip() + 
+  scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000),breaks = seq(0, 700000, 25000)) +
+  theme_minimal() +
+  facet_wrap(~Store, nrow = 8)
+
+qplot(Weekly_Sales, data=hdf2, geom = "boxplot",
+          binwidth=100, main="Test") + xlab("Weekly_Sales") + ylab("Store")+ 
+    theme_minimal() +
+  facet_wrap(~Store, nrow = 2)
+
+p <- ggplot(data = df1, aes(x=Weekly_Sales,y=Store), binwidth= 1000) + 
+             geom_boxplot(aes(fill=Store)) 
+p + facet_wrap( ~ Store, scales="free", nrow = 3)
+
+
+
+p <-ggplot(hdf2, aes(x=Store, y=Weekly_Sales))  + geom_boxplot(width=100)
+p +  scale_x_discrete() + scale_y_continuous(label = scales::dollar, limits = c(0, 500000),breaks = seq(0, 500000, 50000)) +
+  theme_minimal() + facet_wrap( ~ Store, nrow = 3)
+```
+
+
+```{r}
+
+ # Bivariate analysis
+
+ggplot(data = df,
+       mapping = aes(x = HN, y = Weekly_Sales, fill=Weekly_Sales, color=Holiday)) + geom_point() + scale_y_continuous(label = scales::dollar, limits = c(-10000, 700000)) + facet_wrap(~HN)
+
+ggplot(data = df,
+       mapping = aes(x = Month, y = Weekly_Sales, fill=Weekly_Sales, color=year(Date2))) + geom_point() + scale_y_continuous(label = scales::dollar, limits = c(-10000, 700000)) + facet_wrap(~year(Date2))
+
+ggplot(df, aes(x=Week, y=Weekly_Sales, fill=Weekly_Sales,  color=year(Date2))) + geom_line() + scale_y_continuous(label = scales::dollar, limits = c(-10000, 700000)) + facet_wrap(~year(Date2))
+
+
+ggplot(df, aes(x=Type, y=Weekly_Sales, fill=Weekly_Sales, color=Type)) + geom_boxplot() + scale_y_continuous(label = scales::dollar, limits = c(5000, 700000))+ facet_wrap(~Type, scale="free")
+
+
+ggplot(df, aes(x=Dept, y=Weekly_Sales, fill=Weekly_Sales, color=Dept)) + geom_boxplot() + scale_y_continuous(label = scales::dollar, limits = c(5000, 700000))+ facet_wrap(~Dept, scale="free")
+
+#Department-wise total sales per year
+YearSales <- df %>% group_by(Year,Dept) %>% summarise(YearSales = sum(Weekly_Sales)) %>% arrange(desc(YearSales))
+YearSales
+ggplot(head(YearSales, 60), aes(Year, YearSales)) +
+  scale_y_continuous(label = scales::dollar) +
+  geom_col() + facet_wrap(~Dept)
+
+#Department-wise mean sales per year
+YearSales <- df %>% group_by(Year,Dept) %>% summarise(YearSales = mean(Weekly_Sales)) %>% arrange(desc(YearSales))
+YearSales
+ggplot(head(YearSales, 80), aes(Year, YearSales, fill=Year)) +
+  scale_y_continuous(label = scales::dollar) +
+   theme(axis.text = element_text(angle = 0)) +
+  geom_col() + facet_wrap(~Dept, nrow=7)
+
+
+#Store-wise mean sales per year
+YearSales <- df %>% group_by(Year,Store) %>% summarise(YearSales = mean(Weekly_Sales)) %>% arrange(desc(YearSales))
+YearSales
+ggplot(head(YearSales, 80), aes(Year, YearSales, fill=Year)) +
+  scale_y_continuous(label = scales::dollar) +
+   theme(axis.text = element_text(angle = 0)) +
+  geom_col() + facet_wrap(~Store, nrow=7)
+
+
+
+##box plots
+
+df3 <- df %>% filter(df$Store==1|df$Store==2|df$Store==3| df$Store==4|df$Store==5|df$Store==6|df$Store==7|df$Store==8| df$Store==9|df$Store==10|df$Store==11|df$Store==12) 
+
+box_plot <- ggplot(df3, aes(x = Store, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot(aes(fill = IsHoliday),outlier.colour = "blue",
+        outlier.shape = 1,
+        outlier.size = 1)+scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000),breaks = seq(-5000, 700000, 50000))+
+   stat_summary(fun = mean, geom = "point", size = 3,color = "steelblue") 
+
+
+
+hdf <- df %>% filter(df$Store==13| df$Store==14|df$Store==15|df$Store==16|df$Store==17|df$Store==18| df$Store==19|df$Store==20|df$Store==21|df$Store==22 )
+
+box_plot <- ggplot(hdf, aes(x = Store, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot(aes(fill = IsHoliday),outlier.colour = "blue",
+        outlier.shape = 1,
+        outlier.size = 1)+scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000),breaks = seq(-5000, 700000, 50000))+
+   stat_summary(fun = mean, geom = "point", size = 3,color = "steelblue") 
+
+hdf <- df %>% filter(df$Store==23| df$Store==24|df$Store==25|df$Store==26|df$Store==27|df$Store==28| df$Store==29|df$Store==30|df$Store==31|df$Store==32)
+
+box_plot <- ggplot(hdf, aes(x = Store, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot(aes(fill = IsHoliday),outlier.colour = "blue",
+        outlier.shape = 1,
+        outlier.size = 1)+scale_y_continuous(label = scales::dollar, limits = c(-5000, 500000),breaks = seq(-5000, 500000, 50000))+
+   stat_summary(fun = mean, geom = "point", size = 3,color = "steelblue")
+
+hdf <- df %>% filter(df$Store==33| df$Store==34|df$Store==35|df$Store==36|df$Store==37|df$Store==38| df$Store==39|df$Store==40|df$Store==41|df$Store==42|df$Store==43|df$Store==44|df$Store==45 )
+
+box_plot <- ggplot(hdf, aes(x = Store, y = Weekly_Sales))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot(aes(fill = IsHoliday),outlier.colour = "blue",
+        outlier.shape = 1,
+        outlier.size = 1)+scale_y_continuous(label = scales::dollar, limits = c(-5000, 700000),breaks = seq(-5000, 700000, 50000))+
+   stat_summary(fun = mean, geom = "point", size = 3,color = "steelblue")
+```
+
+
+```{r}
+#Corrplot
+
+
+fore_data <- ts(df$Weekly_Sales, start=2010, end=2012,frequency=12)
+plot(fore_data)
+
+df$Week<- as.numeric(df$Week)
+df$HN<- as.numeric(df$HN)
+numeric.var <- sapply(df, is.numeric)
+corr.matrix <- cor(df[,numeric.var])
+corr.matrix
+corr.matrix <- corr.matrix[-c(5,6,7,8,9),-c(5,6,7,8,9)]
+corrplot(corr.matrix, main="\n\nCorrelation Plot for Numerical Variables", method="number")
+
+```
+
+
+```{r}
+
+# filter dataset with markdown > 0 and IsHoliday = True
+
+# SUBSET WITH MARKDOWS
+df_markdown <- df %>%
+  filter((MarkDown1> 0) | (MarkDown2> 0) | (MarkDown3> 0)  | (MarkDown4> 0) | (MarkDown5> 0) )
+
+
+# SUBSET WITH NO MARKDOWS
+df_reg <- df %>%
+  filter((MarkDown1== 0) & (MarkDown2== 0) & (MarkDown3== 0)  & (MarkDown4== 0) & (MarkDown5== 0))
+
+```
+
+
+## Ensemble Methods
+```{r}
+#Subset our data into train and test
+#We then split the data set in train, cross validation and test as shown below. 
+#Since we arranged the dates in increasing order so we split the data in 70:30 ratio each for train:test and train:cv.
+#To perform  k -nearest neighbors for classification, we will use the knn() function from the class package.
+
+#Data normalization to avoid biasness as the value sclae of 'Weekly Sales'is in thousand whereas other attribute's value are in 2 digits or 1 digit.
+
+normalize <- function(x) {
+return ((x - min(x)) / (max(x) - min(x))) } # creating a normalize function for easy convertion.
+
+# Sorting the data in increasing order of Date and then splitting.
+arrange(df_reg, df_reg$Date2)
+
+
+
+# converting factors into numerical variables
+#knn() requires that all predictors be numeric;
+#Numeric predictors are required because of the distance calculations taking place.
+
+df_reg$Store = as.numeric(df_reg$Store)
+df_reg$Dept = as.numeric(df_reg$Dept)
+df_reg$Week = as.numeric(df_reg$Week)
+df_reg$HN = as.numeric(df_reg$HN)
+
+df_reg$Type<- ifelse(df_reg$Type == "A",1,
+               ifelse(df_reg$Type == "B",2,
+                      ifelse(df_reg$Type == "C",3,0)))
+df_reg$Type = as.numeric(df_reg$Type)
+
+
+df_reg <- df_reg[,-c(2,16)]
+summary(df_reg)
+df_reg.subset<- as.data.frame(lapply(df_reg, normalize)) # lapply creates list that is why it is converted to dataframe and it applies defined fundtion (which is 'normalize') to all the list values which is here column 2 to 8 as first column is target/response.
+
+index <- createDataPartition(df_reg$Weekly_Sales,list = FALSE,p=0.8)
+df_reg.train <-df_reg[index,]
+df_reg.test <- df_reg[-index,]
+
+
+df_reg.train <- as.data.frame(df_reg.train)
+df_reg.test <- as.data.frame(df_reg.test)
+
+# training data
+X_df_reg.train = df_reg.train[, -c(2,16)]
+y_df_reg.train = df_reg.train$Weekly_Sales
+
+# testing data
+X_df_reg.test = df_reg.test[, -1]
+y_df_reg.test = df_reg.test$default
+
+#KNN  Classfication
+
+# We will first scale the dataset and then cluster the data into two clusters. Later below we will try to choose the optimal number of clusters.
+
+library(class)
+set.seed(1830)  # To get the same random sample
+
+##extract 5th column of train dataset because it will be used as 'cl' argument in knn function.
+##Generate a random number that is 90% of the total number of rows in dataset.
+ ran <- sample(1:nrow(df_reg), 0.8 * nrow(df_reg))
+ ran
+ df_reg_target_category <- df_reg[ran,3]
+ 
+ df_reg_target_category <- as.data.frame(df_reg_target_category)
+ 
+ ran <- sample(1:nrow(df_reg.test), 0.8 * nrow(df_reg.test))
+ 
+ df_reg_test_category <- df_reg.test[-ran,3]
+ 
+ length(df_reg_target_category)
+ length(df_reg.train)
+  length(df_reg_test_category)
+ 
+ #knn compare
+library(class)
+ 
+ ##run knn function
+ pr <- knn(df_reg.train,df_reg.test,cl=df_reg_target_category,k=13)
+ 
+ 
+ 
+knn_fit<- knn(train = gd_train[,1:30], test = gd_test[,1:30], cl= gd_train[,31],k = 3,prob=TRUE)
+#here were have predicted the  minority class all wrong. But we still do have a high probability of being correct.
+#Is it a good model though?
+
+table(gd_test[,31],knn_fit)
+#KNN in this case is not a good algorithm to use in this case.
+ 
+```
+
+
+
+
+
+```{r}
+#Subset our data into train and test
+index <- createDataPartition(df$Weekly_Sales,list = FALSE,p=0.8)
+df.train <-df[index,]
+df.test <- df[-index,]
+
+
+summary(df.train)
+dim(df.train)
+### Missing Value Ratio plot of variables 
+plot_missing(df.train) 
+any(is.na(df.train))
+sort(colSums(is.na(df.train)))
+
+
+summary(df.test)
+dim(df.test)
+### Missing Value Ratio plot of variables 
+plot_missing(df.test) 
+any(is.na(df.test))
+sort(colSums(is.na(df.test)))
+
+
+#CHECKING FOR Multi-COlinearity
+
+df2 <-df.train[,-c(18)]
+numeric.var <- sapply(df2, is.numeric)
+corr.matrix <- cor(df2[,numeric.var])
+corrplot(corr.matrix, order = "FPC", method = "color", type = "lower", tl.cex = 0.7, tl.col = rgb(0, 0, 0))
+
+highlyCorrelated <- caret::findCorrelation(cor(df2[,numeric.var]),cutoff = 0.7,names = T, verbose = T)
+highlyCorrelated
+
+```
+
+

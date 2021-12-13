@@ -1,0 +1,1021 @@
+Load Libraries
+
+```{r}
+#Loading relevant libraries for current session
+
+toload_libraries <- c("readr","readxl","DataExplorer","dplyr","tidyr", "tidyverse","lubridate","corrplot","corpcor", "ggplot2", "plyr", "scatterplot3d","dplyr", "rpart","ipred", "rpart.plot", "ggplot2", "gridExtra","reshape2","timeSeries", "gbm", "boot","igraph","ggraph","ggRandomForests", "caret","car","rattle","randomForest","miscTools","rsample", "devtools","plotrix","tree","cforest","ranger","party","DMwR","gbm","xgboost","e1071","ROCR","Metrics", "MetricsWeighted","randomForestExplainer","forecast")
+new.packages <- toload_libraries[!(toload_libraries %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+lapply(toload_libraries, require, character.only= TRUE)
+
+options(repos='http://cran.rstudio.org')
+have.packages <- installed.packages()
+cran.packages <- c('devtools','plotrix','randomForest','tree')
+to.install <- setdiff(cran.packages, have.packages[,1])
+if(length(to.install)>0) install.packages(to.install)
+
+library(devtools)
+devtools::install_github('skinner927/reprtree', force = 'TRUE')
+library(reprtree)
+
+```
+
+Load Dataset
+```{r}
+
+#Reading the file in R
+setwd("E:/DATA/Data-Analytics/R-prog/learning/Downloaded/Capstone-Project/Retail_Data_Analytics")
+getwd()
+#check original dataset
+#feature_dt = read_csv("Features data set.csv")
+#stores_dt = read_csv("stores data-set.csv")
+#sales_dt = read_csv("sales data-set.csv")
+
+
+#joined_df1 <- merge(sales_dt, stores_dt, by.x = "Store", all.x = TRUE, all.y = TRUE)
+#joined_df2 <- merge(joined_df1, feature_dt, by.x = "Store", by.y = "Store", all.x = TRUE, all.y = TRUE)
+
+df<-read_csv("Sales_Store_Feature_dataset.csv")
+summary(df)
+str(df)
+
+```
+
+Transform Dataset
+```{r}
+
+#Convert Date to an R Date Class
+class(df$Date)
+parse_date_time(df$Date, orders="dmy")
+df$Date2 <- dmy(df$Date)
+class(df$Date2)
+#Derive the variable from Date Columns 
+
+df$Week<- week(df$Date2)
+df$Month<- month(df$Date2)
+df$Year<- year(df$Date2)
+
+# Sorting the data in increasing order of Date and then splitting.
+arrange(df, df$Date2)
+
+
+
+# Create new factor variable 'HN' to identify Holidays
+
+##Super Bowl Code = 1 (week 6,7)
+##Labour Day Code = 2 (week 36,37)
+##Thanksgiving Code = 3 (week 47,48)
+##Christmas Code = 4 (week 52, 53)
+df$HN<- ifelse(df$IsHoliday == 'TRUE' & df$Week == 6,1,
+               ifelse(df$IsHoliday == 'TRUE' & df$Week == 7,1,
+                      ifelse(df$IsHoliday == 'TRUE' & df$Week == 36,2,
+                             ifelse(df$IsHoliday == 'TRUE' & df$Week == 37,2,
+                                    ifelse(df$IsHoliday == 'TRUE' & df$Week == 47,3,
+                                           ifelse(df$IsHoliday == 'TRUE' & df$Week == 48,3,
+                                                  ifelse(df$IsHoliday == 'TRUE' & df$Week == 52,4,
+                                                         ifelse(df$IsHoliday == 'TRUE' & df$Week == 53,4,5) ) )))))) 
+
+df$HN<- as.factor(df$HN)
+df <- df[,-c(2)] # remove Isholiday column
+
+
+# convert Type variable to numbers
+df$Type<- ifelse(df$Type == "A",1,
+               ifelse(df$Type == "B",2,
+                      ifelse(df$Type == "C",3,0)))
+df$Type<- as.factor(df$Type)
+
+#factors
+
+df$Week<- as.factor(df$Week)
+df$Month<- as.factor(df$Month)
+df$Year<- as.factor(df$Year)
+df$Store <- as.factor(df$Store)
+df$Dept<- as.factor(df$Dept)
+
+### MarkDowns columns with NA's or negative numbers will be replaced by zeros
+
+df <- df %>%
+  mutate(MarkDown1 = replace_na(MarkDown1,0),
+         MarkDown2 = replace_na(MarkDown2,0),
+         MarkDown3 = replace_na(MarkDown3,0),
+         MarkDown4 = replace_na(MarkDown4,0),
+         MarkDown5 = replace_na(MarkDown5,0),
+         MarkDown1 = replace(MarkDown1,which(MarkDown1 < 0),0),
+         MarkDown2 = replace(MarkDown2,which(MarkDown2 < 0),0),
+         MarkDown3 = replace(MarkDown3,which(MarkDown3 < 0),0),
+         MarkDown5 = replace(MarkDown5,which(MarkDown5 < 0),0))
+
+plot_missing(df) 
+
+
+##Negative value of Weekly_Sales were replaced by zeros.
+df <- df %>%
+  mutate(Weekly_Sales = replace(Weekly_Sales, which(Weekly_Sales <0),0))
+aggregate(df[,"Weekly_Sales"], by=df[,c("Type"), drop=FALSE], min)
+
+df <- df[,-c(2)]#remove isholiday column
+df <- df[,-c(15)]#remove isholiday column
+
+
+#detect and treat outliers 
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+df$Weekly_Sales=outlier_capping(df$Weekly_Sales) 
+df$MarkDown1=outlier_capping(df$MarkDown1) 
+df$MarkDown2=outlier_capping(df$MarkDown2) 
+df$MarkDown3=outlier_capping(df$MarkDown3) 
+df$MarkDown4=outlier_capping(df$MarkDown4) 
+df$MarkDown5=outlier_capping(df$MarkDown5) 
+
+
+df1 <-df # make a copy of dataset
+summary(df)
+attach(df)
+lapply(df,class) #list the type of each variable
+
+write.csv(df1,"E:/DATA/Data-Analytics/R-prog/learning/Downloaded/Capstone-Project/Retail_Data_Analytics/df1.csv", row.names = FALSE)
+
+
+```
+
+CREATE SUBSET AND SPLIT ORIGINAL DATA 'df'
+
+```{r}
+# Get rows of df based on Type 
+df.ss1 <- subset(x = df,
+      subset = (Type == 1))
+
+
+df.ss2 <- subset(x = df,
+      subset = (Type == 2))
+
+df.ss3 <- subset(x = df,
+      subset = (Type == 3))
+
+
+#test and train data on normalized Data
+
+index <- createDataPartition(df.ss1$Weekly_Sales,list = FALSE,p=0.6)
+df.train.1 <- df.ss1[index,]
+df.test.1 <- df.ss1[-index,]
+dim(df.train.1)
+dim(df.test.1)
+
+
+index <- createDataPartition(df.ss2$Weekly_Sales,list = FALSE,p=0.6)
+df.train.2 <- df.ss2[index,]
+df.test.2 <- df.ss2[-index,]
+dim(df.train.2)
+dim(df.test.2)
+
+
+index <- createDataPartition(df.ss3$Weekly_Sales,list = FALSE,p=0.6)
+df.train.3 <- df.ss3[index,]
+df.test.3 <- df.ss3[-index,]
+dim(df.train.3)
+dim(df.test.3)
+
+
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+df.train.1$Weekly_Sales=outlier_capping(df.train.1$Weekly_Sales) 
+df.train.1$MarkDown1=outlier_capping(df.train.1$MarkDown1) 
+df.train.1$MarkDown2=outlier_capping(df.train.1$MarkDown2) 
+df.train.1$MarkDown3=outlier_capping(df.train.1$MarkDown3) 
+df.train.1$MarkDown4=outlier_capping(df.train.1$MarkDown4) 
+df.train.1$MarkDown5=outlier_capping(df.train.1$MarkDown5) 
+
+#factors to numeric
+df.train.1$Week<- as.numeric(df.train.1$Week)
+df.train.1$Month<- as.numeric(df.train.1$Month)
+df.train.1$Year<- as.numeric(df.train.1$Year)
+df.train.1$Type<- as.numeric(df.train.1$Type)
+df.train.1$Store <- as.numeric(df.train.1$Store)
+df.train.1$Dept<- as.numeric(df.train.1$Dept)
+df.train.1$HN<- as.numeric(df.train.1$HN)
+
+df.train.2$Weekly_Sales=outlier_capping(df.train.2$Weekly_Sales) 
+df.train.2$MarkDown1=outlier_capping(df.train.2$MarkDown1) 
+df.train.2$MarkDown2=outlier_capping(df.train.2$MarkDown2) 
+df.train.2$MarkDown3=outlier_capping(df.train.2$MarkDown3) 
+df.train.2$MarkDown4=outlier_capping(df.train.2$MarkDown4) 
+df.train.2$MarkDown5=outlier_capping(df.train.2$MarkDown5)
+#factors to numeric
+df.train.2$Week<- as.numeric(df.train.2$Week)
+df.train.2$Month<- as.numeric(df.train.2$Month)
+df.train.2$Year<- as.numeric(df.train.2$Year)
+df.train.2$Type<- as.numeric(df.train.2$Type)
+df.train.2$Store <- as.numeric(df.train.2$Store)
+df.train.2$Dept<- as.numeric(df.train.2$Dept)
+df.train.2$HN<- as.numeric(df.train.2$HN)
+
+
+df.train.3$Weekly_Sales=outlier_capping(df.train.3$Weekly_Sales) 
+df.train.3$MarkDown1=outlier_capping(df.train.3$MarkDown1) 
+df.train.3$MarkDown2=outlier_capping(df.train.3$MarkDown2) 
+df.train.3$MarkDown3=outlier_capping(df.train.3$MarkDown3) 
+df.train.3$MarkDown4=outlier_capping(df.train.3$MarkDown4) 
+df.train.3$MarkDown5=outlier_capping(df.train.3$MarkDown5)
+#factors to numeric
+df.train.3$Week<- as.numeric(df.train.3$Week)
+df.train.3$Month<- as.numeric(df.train.3$Month)
+df.train.3$Year<- as.numeric(df.train.3$Year)
+df.train.3$Type<- as.numeric(df.train.3$Type)
+df.train.3$Store <- as.numeric(df.train.3$Store)
+df.train.3$Dept<- as.numeric(df.train.3$Dept)
+df.train.3$HN<- as.numeric(df.train.3$HN)
+
+
+```
+
+
+Normalize Dataset AND CREATE SUBSET AND SPLIT ORIGINAL DATA 'df1'
+```{r}
+# Sometimes we need to normalize data in order to compare different variables that are not in the same scale
+# Imagine that we have the age and the salary of a person
+# If we don't normalize these variables the weight in some predictive models could be very different
+# The function to normalize data is (x - min(x))/(max(x) - min(x))
+# We take only the numerical values to normalize
+# for this sake we duplicate dataset and convert all facotr to numerical type
+
+#detect and treat outliers for non holiday records
+
+outlier_capping = function(x){ 
+  qnt = quantile(x, probs=c(.25, .75), na.rm = T) 
+ caps = quantile(x, probs=c(.05, .95), na.rm = T) 
+    H = 1.5 * IQR(x, na.rm = T) 
+   x[x < (qnt[1] - H)] <- caps[1] 
+   x[x > (qnt[2] + H)] <- caps[2] 
+   return(x) } 
+df1$Weekly_Sales=outlier_capping(df1$Weekly_Sales) 
+df1$MarkDown1=outlier_capping(df1$MarkDown1) 
+df1$MarkDown2=outlier_capping(df1$MarkDown2) 
+df1$MarkDown3=outlier_capping(df1$MarkDown3) 
+df1$MarkDown4=outlier_capping(df1$MarkDown4) 
+df1$MarkDown5=outlier_capping(df1$MarkDown5) 
+
+
+
+lapply(df1,class) #list the type of each variable
+
+
+norm = function(x) { (x- min(x))/(max(x) - min(x)) }
+#scale only specific variable names while preserving other variables unchanged (and the variable names could be dynamically generated):
+
+
+norm.data.df <- df1 %>% mutate_at(c(3,5,6,7,8,9,10,11,12,13,14), ~(scale(.) %>% as.vector))
+#factors to numeric
+norm.data.df$Week<- as.numeric(norm.data.df$Week)
+norm.data.df$Month<- as.numeric(norm.data.df$Month)
+norm.data.df$Year<- as.numeric(norm.data.df$Year)
+norm.data.df$Type<- as.numeric(norm.data.df$Type)
+norm.data.df$Store <- as.numeric(norm.data.df$Store)
+norm.data.df$Dept<- as.numeric(norm.data.df$Dept)
+norm.data.df$HN<- as.numeric(norm.data.df$HN)
+
+
+norm.data.df <- norm.data.df %>% mutate_at(c(1,2,4,15,16,17,18), ~(scale(.) %>% as.vector))
+
+cor(norm.data.df, method="pearson")
+
+numeric.var <- sapply(norm.data.df, is.numeric)
+corr.matrix <- cor(norm.data.df[,numeric.var])
+corrplot(corr.matrix, method="number")
+
+
+
+# create scatter plot - Weekly_sales data s1.test by Dept
+#  print(xyplot(Weekly_Sales~Week|Dept,
+              # data=df.subset1, main=paste('Dept: ', Dept, sep=''), as.table=TRUE, scales = "free",
+              # strip = strip.custom(strip.names = TRUE, strip.levels = TRUE),
+              # par.strip.text = list(cex = 0.75)))
+#  print(xyplot(Weekly_Sales~Week|Dept,
+              # data=df.subset2, main=paste('Dept: ', Dept, sep=''), as.table=TRUE, scales = "free",
+              # strip = strip.custom(strip.names = TRUE, strip.levels = TRUE),
+              # par.strip.text = list(cex = 0.75)))
+#  print(xyplot(Weekly_Sales~Week|Dept,
+              # data=df.subset3, main=paste('Dept: ', Dept, sep=''), as.table=TRUE, scales = "free",
+              # strip = strip.custom(strip.names = TRUE, strip.levels = TRUE),
+              # par.strip.text = list(cex = 0.75)))  
+#  print(xyplot(Weekly_Sales~Week|Dept,
+              # data=df.subset4, main=paste('Dept: ', Dept, sep=''), as.table=TRUE, scales = "free",
+              # strip = strip.custom(strip.names = TRUE, strip.levels = TRUE),
+              # par.strip.text = list(cex = 0.75)))  
+
+
+# create partition
+### Missing Value Ratio plot of variables
+
+plot_missing(df.subset1) 
+
+#test and train data on Original Data - norm.data.df
+
+index <- createDataPartition(norm.data.df$Weekly_Sales,list = FALSE,p=0.6)
+df.train <- norm.data.df[index,]
+df.test <- norm.data.df[-index,]
+dim(df.train)
+dim(df.test)
+
+```
+
+
+
+
+Confusion Matrix
+
+```{r}
+
+# #function for calculating the FNR,FPR,Accuracy
+calc <- function(cm){
+  TN = cm[1,1]
+  FP = cm[1,2]
+  FN = cm[2,1]
+  TP = cm[2,2]
+  # #calculations
+  print(paste0('Accuracy :- ',((TN+TP)/(TN+TP+FN+FP))*100))
+  print(paste0('FNR :- ',((FN)/(TP+FN))*100))
+  print(paste0('FPR :- ',((FP)/(TN+FP))*100))
+  print(paste0('precision :-  ',((TP)/(TP+FP))*100)) 
+  print(paste0('recall//TPR :-  ',((TP)/(TP+FP))*100))
+  print(paste0('Sensitivity :-  ',((TP)/(TP+FN))*100))
+  print(paste0('Specificity :-  ',((TN)/(TN+FP))*100))
+  plot(cm)
+}
+```
+
+Models for Normalized dataset
+Ensemble model: boosting / random forest
+Model 3a: stocasting gradient boosting (gbm, 6-fold CV)
+This method uses the same approach as a single tree, but sums the importances over each boosting iteration
+
+```{r}
+
+## gbm fitting
+set.seed(123)
+
+GBM_Ntrees <- 500 #1000
+GBM_Shrinkage <- 0.01
+GBM_Bag.fraction <- 0.7 # stochastic GBM to reduce the chance of overfitting
+GBM_Distributions <- c('gaussian')[1] # gaussian seems work better than laplace and quantile
+
+Grid <- expand.grid(n.trees = 1000, interaction.depth = c(30), shrinkage = c(0.1))
+
+
+#------subset 1-------------------
+fit.gbm1a <- gbm(Weekly_Sales ~ Week+Month+Year+Size+CPI+Unemployment+Temperature, data=df.train.1,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+fit.gbm1b <- gbm(Weekly_Sales ~ Week+Month+Year+Size+MarkDown1+MarkDown2+MarkDown3+MarkDown4+MarkDown5, data=df.train.1,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+fit.gbm1 <- fit.gbm1a
+fit.gbm1 <- fit.gbm1b
+summary(fit.gbm1)
+print(fit.gbm1)
+
+#### Make prediction
+fit.gbm1.pred.train <- predict.gbm(fit.gbm1, df.train.1, type = "response")
+fit.gbm1.pred.test <- predict.gbm(fit.gbm1, df.test.1, type = "response")
+
+
+plot.gbm(fit.gbm1, 1, 452 )
+plot.gbm(fit.gbm1, 2, 452 ) 
+plot.gbm(fit.gbm1, 3, 452 ) 
+plot.gbm(fit.gbm1, 4, 452 ) 
+plot.gbm(fit.gbm1, 5, 452 ) 
+plot.gbm(fit.gbm1, 6, 452 ) 
+plot.gbm(fit.gbm1, 7, 452 ) 
+plot.gbm(fit.gbm1, 8, 452 ) 
+plot.gbm(fit.gbm1, 9, 452 ) 
+
+# results
+
+sqrt(min(fit.gbm1$cv.error)) # get MSE and compute RMSE
+mean(abs(fit.gbm1.pred.train)) # get MAE
+mean(abs(fit.gbm1.pred.test)) # get MAE
+
+caret::RMSE(fit.gbm1.pred.train, df.train.1$Weekly_Sales)
+caret::RMSE(fit.gbm1.pred.test, df.test.1$Weekly_Sales)
+
+#confusion matrix
+actuals.preds.gbm1 <- data.frame(cbind(actuals=df.test.1$Weekly_Sales, predicteds=fit.gbm1.pred.test))  # make  
+
+cm.gbm1 <- cor(actuals.preds.gbm1)  # 78.7%
+calc(cm.gbm1) 
+
+#------subset 2-------------------
+
+fit.gbm2a <- gbm(Weekly_Sales ~ Week+Month+Year+Size+CPI+Unemployment+Temperature, data=df.train.2,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+fit.gbm2b <- gbm(Weekly_Sales ~ Week+Month+Year+Size+MarkDown1+MarkDown2+MarkDown3+MarkDown4+MarkDown5, data=df.train.2,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+
+fit.gbm2 <- fit.gbm2a
+fit.gbm2 <- fit.gbm2b
+
+summary(fit.gbm2)
+print(fit.gbm2)
+sqrt(min(fit.gbm2$cv.error)) # get MSE and compute RMSE
+
+
+#### Make prediction
+fit.gbm2.pred.train <- predict.gbm(fit.gbm2, df.train.2, type = "response")
+fit.gbm2.pred.test <- predict.gbm(fit.gbm2, df.test.2, type = "response")
+
+
+plot.gbm(fit.gbm2, 1, 400)
+plot.gbm(fit.gbm2, 2, 400) 
+plot.gbm(fit.gbm2, 3, 400) 
+plot.gbm(fit.gbm2, 4, 400) 
+plot.gbm(fit.gbm2, 5, 400) 
+plot.gbm(fit.gbm2, 6, 400) 
+plot.gbm(fit.gbm2, 7, 400) 
+plot.gbm(fit.gbm2, 8, 400) 
+plot.gbm(fit.gbm2, 9, 400) 
+
+
+
+# results
+caret::RMSE(fit.gbm2.pred.train, df.train.2$Weekly_Sales)
+caret::RMSE(fit.gbm2.pred.test, df.test.2$Weekly_Sales)
+
+#confusion matrix
+actuals.preds.gbm2 <- data.frame(cbind(actuals=df.test.2$Weekly_Sales, predicteds=fit.gbm2.pred.test))  # make  
+
+cm.gbm2 <- cor(actuals.preds.gbm2)  # 78.7%
+calc(cm.gbm2) 
+
+
+
+#------subset 3-------------------
+
+fit.gbm3a <- gbm(Weekly_Sales ~ Week+Month+Year+Size+CPI+Unemployment+Temperature, data=df.train.3,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+
+fit.gbm3b <- gbm(Weekly_Sales ~ Week+Month+Year+Size+MarkDown1+MarkDown2+MarkDown3+MarkDown4+MarkDown5, data=df.train.3,  distribution = 'gaussian', n.trees = GBM_Ntrees, interaction.depth = 10, cv.folds = 16, n.cores = 2, shrinkage = GBM_Shrinkage, bag.fraction = GBM_Bag.fraction, verbose = F)
+
+
+fit.gbm3 <- fit.gbm3a
+fit.gbm3 <- fit.gbm3b
+
+summary(fit.gbm3)
+print(fit.gbm3)
+sqrt(min(fit.gbm3$cv.error)) # get MSE and compute RMSE
+
+
+
+
+plot.gbm(fit.gbm3, 1, 150)
+plot.gbm(fit.gbm3, 2, 150) 
+plot.gbm(fit.gbm3, 3, 150) 
+plot.gbm(fit.gbm3, 4, 150) 
+plot.gbm(fit.gbm3, 5, 150) 
+plot.gbm(fit.gbm3, 6, 150) 
+plot.gbm(fit.gbm3, 7, 150) 
+plot.gbm(fit.gbm3, 8, 150) 
+plot.gbm(fit.gbm3, 9, 150) 
+
+#### Make prediction
+fit.gbm3.pred.train <- predict.gbm(fit.gbm3, df.train.3, type = "response")
+fit.gbm3.pred.test <- predict.gbm(fit.gbm3, df.test.3, type = "response")
+
+# results
+caret::RMSE(fit.gbm3.pred.train, df.train.3$Weekly_Sales)
+caret::RMSE(fit.gbm3.pred.test, df.test.3$Weekly_Sales)
+
+
+#confusion matrix
+actuals.preds.gbm3 <- data.frame(cbind(actuals=df.test.3$Weekly_Sales, predicteds=fit.gbm3.pred.test))  # make  
+
+cm.gbm3 <- cor(actuals.preds.gbm3)  # 78.7%
+calc(cm.gbm3) 
+
+
+
+```
+
+
+Models for Subsets
+ 
+Random Forest - 1 , 2, 3
+```{r}
+
+
+#------------------------------------Subset 1---------------------------------------
+seed=1000
+set.seed(seed)
+rndFor1 = randomForest(Weekly_Sales ~., data = df.train.1, ntree=101, mtry = 5, nodesize = 10, importance=TRUE,predict.all=TRUE)
+
+rndFor2 = randomForest(Weekly_Sales ~., data = df.train.2,ntree=101, mtry = 5, nodesize = 10,importance=TRUE,predict.all=TRUE)
+
+rndFor3 = randomForest(Weekly_Sales ~., data = df.train.3, ntree=101, mtry = 5, nodesize = 10,importance=TRUE,predict.all=TRUE)
+
+df.train.1$predict.class = predict(rndFor1,df.train.1, type="class" )
+head(df.train.1)
+tbl1 = table(df.train.1$Weekly_Sales,df.train.1$predict.class )
+plot(x = df.train.1$Week, y = df.train.1$predict.class, col = 'Red', main ="Actual vs Prediciton", xlab = "Week", ylab = "Weekly Sales")
+lines(x = df.train.1$Week, y = df.train.1$Weekly_Sales, col = 'blue')
+
+#tune RF
+tuneRF1 = tuneRF(x=df.train.1[,-c(3)],y=df.train.1$Weekly_Sales, mtryStart =5, stepFactor =1.5, nteeTry=51, improve =0.0001, nodesize=10, trace = TRUE, plot=TRUE, doBest = TRUE, importance = TRUE)
+
+
+results <- resamples(list(RF=rndFor1, GBM=rndFor2, GBM=rndFor3))
+
+plot(rndFor1) #Plot the Random Forest Results
+plot(rndFor2) #Plot the Random Forest Results
+plot(rndFor3) #Plot the Random Forest Results
+
+print(rndFor1)
+plot(rndFor1$err.rate)
+explain_forest(rndFor1, interactions = TRUE)
+
+
+print(rndFor2)
+plot(rndFor2$err.rate)
+explain_forest(rndFor2, interactions = TRUE)
+
+print(rndFor3)
+plot(rndFor3$err.rate)
+explain_forest(rndFor3, interactions = TRUE)
+
+#print(rndFor$importance)
+impVar <- round(randomForest::importance(rndFor1),2)
+impVar[order(impVar[,2],decreasing = TRUE),]
+varImpPlot(rndFor1)
+
+impVar <- round(randomForest::importance(rndFor2),2)
+impVar[order(impVar[,2],decreasing = TRUE),]
+varImpPlot(rndFor2)
+
+impVar <- round(randomForest::importance(rndFor3),2)
+impVar[order(impVar[,2],decreasing = TRUE),]
+varImpPlot(rndFor3)
+
+
+#predict on test data
+rf.test.pred1 = predict(rndFor1, df.test.1, type='response')
+rf.test.pred2 = predict(rndFor2, df.test.2, type='response')
+rf.test.pred3 = predict(rndFor3, df.test.3, type='response')
+
+#Confusion-matrix
+cm.rndFor1=table(ActualValue=df.test.1$Weekly_Sales, PredictedValue=rf.test.pred1>0.5)
+cm.rndFor2=table(ActualValue=df.test.2$Weekly_Sales, PredictedValue=rf.test.pred2>0.5)
+cm.rndFor3=table(ActualValue=df.test.3$Weekly_Sales, PredictedValue=rf.test.pred3>0.5)
+
+calc(cm.rndFor1)
+calc(cm.rndFor2)
+calc(cm.rndFor3)
+
+ plot( predict(rndFor1), df.train.1$Weekly_Sales)
+ abline(c(0,1),col=2)
+plot( predict(rndFor1,newdata=df.test.1), df.test.1$Weekly_Sales)
+ abline(c(0,1),col=2)
+plot( predict(rndFor2,newdata=df.test.2), df.test.2$Weekly_Sales)
+ abline(c(0,1),col=2)
+plot( predict(rndFor3,newdata=df.test.3), df.test.3$Weekly_Sales)
+ abline(c(0,1),col=2)
+ 
+ 
+rmse(df.test.1$Weekly_Sales,rf.test.pred1 )
+rmse(df.test.1$Weekly_Sales,rf.test.pred2 )
+rmse(df.test.1$Weekly_Sales,rf.test.pred3 )
+
+```
+
+Regression Models- 1 , 2, 3.not good
+```{r}
+
+# MODEL 1
+set.seed(1875)
+lm.model1=lm(Weekly_Sales~CPI+Unemployment+Temperature+MarkDown1+MarkDown2+MarkDown3+MarkDown4+MarkDown5+HN,data=df.train.1)
+
+
+lm.model1
+summary(lm.model1)
+
+lm.model2=lm(Weekly_Sales~ Size+MarkDown2+MarkDown3+MarkDown5,data=df.train.2)
+summary(lm.model2)
+
+lm.model3=lm(Weekly_Sales~CPI+Unemployment+Temperature+MarkDown3+MarkDown5,data=df.train.3)
+summary(lm.model3)
+
+#prediction
+lm.pred1 <- predict(lm.model1, df.test.1, type='response')
+lm.pred2 <- predict(lm.model2, df.test.2, type='response')
+lm.pred3 <- predict(lm.model3, df.test.3, type='response')
+
+
+#confusion matrix
+actuals_pred.1 <- data.frame(cbind(actuals=df.test.1$Weekly_Sales, predicteds=lm.pred1)) 
+rmse(df.test1$Weekly_Sales,lm.pred1 )
+calc(actuals_pred.1)
+
+actuals_pred.2 <- data.frame(cbind(actuals=df.test.2$Weekly_Sales, predicteds=lm.pred2)) 
+rmse(df.test.2$Weekly_Sales,lm.pred2 )
+calc(actuals_pred.2)
+
+actuals_pred.3 <- data.frame(cbind(actuals=df.test.3$Weekly_Sales, predicteds=lm.pred3)) 
+rmse(df.test.3$Weekly_Sales,lm.pred3 )
+calc(actuals_pred.3)
+
+# estimate variable importance
+car::vif(lm.model1)
+car::vif(lm.model2)
+car::vif(lm.model3)
+
+AIC(lm.model1)  
+AIC(lm.model2)  
+
+
+```
+
+Regression Models
+```{r}
+
+#simple Linear Regression
+#ANOVA and Regression
+#Higher the R-squared the better your model is fitting the data, but we should avoid over-fitting
+
+# Use caret library to find the Top significant variables
+options(scipen=4)  # Set scipen = 0  code that can be used to force full printout of numbers rather than scientific notation
+
+
+# MODEL 1
+set.seed(1875)
+model1=lm(Weekly_Sales~Dept+Size+CPI+Unemployment+Temperature+HN,data=df.train)
+
+plot(model1)
+summary(model1)
+summary(aov(model1))
+car::vif(model1)
+
+
+lm.pred1 <- predict(model1, df.test, interval="predict",level=0.95)
+
+actuals_preds1 <- data.frame(cbind(actuals=df.test$Weekly_Sales, predicteds=lm.pred1))  # make 
+cm.lm1 <- cor(actuals_preds1) 
+calc(cm.lm1)
+
+sqrt(mean(exp(resid(model1)) ^ 2)) # RMSE for Model 1
+
+
+
+
+
+
+mse(norm.df.test$Weekly_Sales, lm.pred1)
+mse(norm.df.test$Weekly_Sales, lm.pred2)
+rmse(norm.df.test$Weekly_Sales, lm.pred1)
+rmse(norm.df.test$Weekly_Sales, lm.pred2)
+AIC(model1)  # AIC => 698824.7
+BIC(model1)  # BIC => 698918.7
+mape1 <- mean(abs((actuals_preds1$predicted - actuals_preds1$actuals))/actuals_preds1$actuals) 
+mape1
+mape1 <- mean(abs((actuals_preds2$predicted - actuals_preds2$actuals))/actuals_preds2$actuals) 
+
+
+
+AIC(model2)  # AIC => 419.1569
+BIC(model2)  # BIC => 424.8929
+
+```
+
+Decision Tree
+```{r}
+#Using a decision tree we will like to predict the Type of a store based on all the other parameters
+set.seed(1300)
+r.ctrl <- rpart.control(minsplit = 1000,
+                        minbucket = 20,
+                        cp = 0.005,
+                        xval = 10
+)
+
+#1.  Building the CART model on training subset 1
+
+#2.Model 1
+train.rpart1 <-rpart(Weekly_Sales ~ Dept+CPI+Unemployment+Temperature+MarkDown3+MarkDown5+Type+HN, data=df.train1[,-c(15)], control=r.ctrl)
+
+
+summary(train.rpart1)
+
+rpart.plot(train.rpart1,  under = TRUE)
+rpart.rules(train.rpart1, cover = TRUE, roundint=FALSE)
+
+#The unncessarily complex tree above can be pruned using a cost complexity threshold. Using a complexity #threshold of 0.015 gives us a much simpler tree.
+printcp(train.rpart1)
+plotcp(train.rpart1)
+
+bestcp <- train.rpart1$cptable[which.min(train.rpart1$cptable[,"xerror"]),"CP"]
+bestcp
+ptree = prune(train.rpart1, cp= bestcp ,"CP")
+printcp(ptree)
+ptree
+
+fancyRpartPlot(train.rpart1, tweak=0.98)
+rpart.plot(ptree)
+
+#2.Model 2
+
+train.rpart2 <-rpart(Weekly_Sales ~MarkDown1+MarkDown2+MarkDown3+MarkDown4+MarkDown5+Type+HN+Dept, data=df.train1[,-c(15)], control=r.ctrl)
+
+summary(train.rpart2)
+fancyRpartPlot(train.rpart2)
+
+rpart.plot(train.rpart2, type = 3, clip.right.labs = FALSE, branch = .3, under = TRUE)
+rpart.rules(train.rpart2)
+
+#The unncessarily complex tree above can be pruned using a cost complexity threshold. Using a complexity #threshold of 0.015 gives us a much simpler tree.
+printcp(train.rpart2)
+plotcp(train.rpart2)
+
+ptree2 = prune(train.rpart2, cp= 0.002 ,"CP")
+printcp(ptree2)
+ptree2
+rpart.plot(ptree2, under = TRUE)
+fancyRpartPlot(ptree2)
+
+
+rpart.prediction1 <- predict(train.rpart1,df.test1[,-c(15)], type="matrix", rules=TRUE)
+summary(rpart.prediction1)
+plot(rpart.prediction1)
+
+cm.rpart1=table(ActualValue=df.test1$Weekly_Sales, PredictedValue=rpart.prediction1>0.5)
+cm.rpart1
+calc(cm.rpart1)
+rmse(df.test1$Weekly_Sales, rpart.prediction1)
+
+
+rpart.prediction2 <- predict(train.rpart2,df.test1, type="vector")
+summary(rpart.prediction2)
+
+#1.  Building the CART model on training subset 2
+
+train.rpart <-rpart(Weekly_Sales ~ CPI+Unemployment+Temperature+MarkDown3+MarkDown5+Size+Store+HN, data=df.train[,-c(15)], control=r.ctrl)
+printcp(train.rpart)
+plotcp(train.rpart)
+ptree = prune(train.rpart, cp= 0.009 ,"CP")
+printcp(ptree)
+ptree
+rpart.plot(ptree, type = 3, clip.right.labs = FALSE, branch = .3, under = TRUE)
+fancyRpartPlot(ptree, tweak=0.6)
+rpart.prediction <- predict(train.rpart,df.test, type="vector")
+summary(rpart.prediction)
+cm.rpart=table(df.test$Weekly_Sales, rpart.prediction)
+cm.rpart
+calc(cm.rpart)
+
+train.rpart <-rpart(Weekly_Sales ~ CPI+Temperature+Fuel_Price+Unemployment+MarkDown3+Year+Type, data=df.train[,-c(15)], control=r.ctrl)
+printcp(train.rpart)
+plotcp(train.rpart)
+bestcp <- train.rpart$cptable[which.min(train.rpart$cptable[,"xerror"]),"CP"]
+bestcp
+ptree = prune(train.rpart, cp= 0.005 ,"CP")
+printcp(ptree)
+ptree
+rpart.plot(ptree)
+fancyRpartPlot(ptree, tweak=1.6)
+rpart.prediction <- predict(train.rpart,df.test, type="vector")
+summary(rpart.prediction)
+cm.rpart=table(df.test$Weekly_Sales, rpart.prediction)
+cm.rpart
+calc(cm.rpart)
+
+
+mse(df.test1$Weekly_Sales, rpart.prediction1)
+mse(df.test1$Weekly_Sales, rpart.prediction2)
+rmse(df.test1$Weekly_Sales, rpart.prediction1)
+rmse(df.test1$Weekly_Sales, rpart.prediction2)
+
+```
+
+
+Random Forest
+```{r}
+#RF Model1
+
+
+#factors to numeric
+
+
+
+
+df.train <- df[index,]
+df.test <- df[-index,]
+dim(df.train)
+dim(df.test)
+
+
+seed=1000
+set.seed(seed)
+rndFor = randomForest(Weekly_Sales ~ ., data = df.train1[,-15], 
+                   ntree=101, mtry = 3, nodesize = 10,
+                   importance=TRUE)
+
+
+print(rndFor)
+
+plot(rndFor)
+
+
+#print(rndFor$importance)
+impVar <- round(randomForest::importance(rndFor),2)
+impVar
+impVar[order(impVar[,2],decreasing = TRUE),]
+varImpPlot(rndFor)
+
+#predict on test data
+rf.test.pred1 = predict(rndFor, df.test1[,-15], type='response')
+head(rf.test.pred1)
+dim(rf.test.pred1)
+length(rf.test.pred1)
+length(df.test$Weekly_Sales)
+
+#Confusion-matrix
+cm.rndFor<- table(df.test1[,-15],rf.test.pred1)
+cm.rndFor
+
+calc(cm.rndFor)
+
+rmse(df.test1$Weekly_Sales,rf.pred1)
+oob1<-sqrt(rf1$mse)
+oob1
+
+
+(rsq <- rSquared(df.test$Weekly_Sales, df.train1$Weekly_Sales - predict(rf1, df.train1[,cols1])))
+# [1,] 0.08031696 (approx % of variables that can be explained in the model)
+(mse <- mean((df.test1$Weekly_Sales - predict(rf1, df.test1[,cols1]))^2))
+# [1] 472138015
+
+# number of trees with lowest MSE
+which.min(rf1$mse)
+
+# RMSE of this optimal random forest
+sqrt(rf1$mse[which.min(rf1$mse)])
+
+## [1] 25673.5
+
+## Now we will "tune" the Random Forest by trying different m values. We will stick with 51 trees (odd number of trees are preferable). The returned forest, "tRndFor" is the one corresponding to the best m
+
+set.seed(1000)
+tRndFor = tuneRF(x = df.train1, 
+              y=df.train1$Weekly_Sales,
+              mtryStart = 3, 
+              ntreeTry = 11, 
+              stepFactor = 1.5, 
+              improve = 0.0001, 
+              trace=TRUE, 
+              plot = TRUE,
+              doBest = TRUE,
+              nodesize = 10, 
+              importance=TRUE
+)
+importance(tRndFor)
+
+
+(rsq <- rSquared(df.test$Weekly_Sales, df.test$Weekly_Sales - predict(rf2, df.test[,cols2])))
+# [1,] 0.08031696 (approx % of variables that can be explained in the model)
+(mse <- mean((df.test$Weekly_Sales - predict(rf2, df.test[,cols2]))^2))
+# [1] 472138015
+
+
+tree <- getTree(rf1, 50, labelVar=TRUE)
+tree
+
+reprtree:::plot.getTree(rf1)
+
+#RF Model3
+# For large datasets, we recommend starting with a dry run with very few trees, probably even using a subset of the data only.
+
+
+
+
+cols2 <- names(df.train)[2:14]
+cols2
+
+rf3 <- ranger(Weekly_Sales ~ ., data=s1.train[,cols2],  quantreg=TRUE)
+print(rf3)
+getTree(rf3, k=1, labelVar=FALSE)
+
+
+ggplot(stack(rf3$variable.importance), aes(ind, values)) + geom_col() + coord_flip()
+
+
+pred <- predict(rf3, data = s1.test[,cols2],type='response')
+
+plot(pred$predictions)
+pred$predictions
+
+(rsq <- rSquared(s1.test$Weekly_Sales, s1.test$Weekly_Sales - predict(rf3, s1.test[,cols2])))
+# [1,] 0.08031696 (approx % of variables that can be explained in the model)
+(mse <- mean((df.test$Weekly_Sales - predict(rf3, s1.test[,cols2]))^2))
+# [1] 472138015
+
+table(df.test$Weekly_Sales, predictions(pred))
+
+
+```
+
+
+
+```{r}
+knitr::opts_chunk$set(fig.width=120, fig.height=80) 
+ 
+#### Plot the fitted Weekly_Sales from Boosting prediction
+
+plot(df.train.1$Week, df.train.1$predict.class,
+             type='l', col='red', xlim=c(1,180),scale_x_discrete(breaks = seq(0, 52, 1)),
+             xlab='Week Index', ylab='Weekly Sales') 
+
+ggplot(df.train.1, aes(x = Week, y = predict.class)) +
+  geom_boxplot(binwidth=1000) +
+  labs(title = "Weekly sales distribution") +
+  ylab('Sales') +
+  theme(legend.position = "right", 
+        legend.title = element_text() ) +  scale_x_discrete(breaks = seq(0, 52, 1)) +
+  facet_grid(~ Dept, scales="free")
+
+```
+
+
+
+```{r}
+
+#Model Comparison
+library(dplyr)
+models = c("fit.gbm1a","fit.gbm1b","fit.gbm2a","fit.gbm2b")
+comparison <- data.frame(model = names(models),
+                         Sensitivity = rep(NA, length(models)),
+                         Specificity = rep(NA, length(models)),
+                         Precision = rep(NA, length(models)),
+                         Recall = rep(NA, length(models)),
+                         F1 = rep(NA, length(models)))
+
+for (name in names(models)) {
+  model <- get(paste0("cm_", name))
+  
+  comparison[comparison$model == name, ] <- filter(comparison, model == name) %>%
+    mutate(Sensitivity = model$byClass["Sensitivity"],
+           Specificity = model$byClass["Specificity"],
+           Precision = model$byClass["Precision"],
+           Recall = model$byClass["Recall"],
+           F1 = model$byClass["F1"])
+}
+```
+
+
+
+
+```{r}
+#ref:https://gist.github.com/sillasgonzaga/eef0577c14b83b32f9b7cc480d2765dd
+
+plot_rf_tree <- function(final_model, tree_num, shorten_label = TRUE) {
+  
+  # source: https://shiring.github.io/machine_learning/2017/03/16/rf_plot_ggraph
+  
+  # get tree by index
+  tree <- randomForest::getTree(final_model, 
+                                k = tree_num, 
+                                labelVar = TRUE) %>%
+    tibble::rownames_to_column() %>%
+    # make leaf split points to NA, so the 0s won't get plotted
+    mutate(`split point` = ifelse(is.na(prediction), `split point`, NA))
+  
+  # prepare data frame for graph
+  graph_frame <- data.frame(from = rep(tree$rowname, 2),
+                            to = c(tree$`left daughter`, tree$`right daughter`))
+  
+  # convert to graph and delete the last node that we don't want to plot
+  graph <- graph_from_data_frame(graph_frame) %>%
+    delete_vertices("0")
+  
+  # set node labels
+  V(graph)$node_label <- gsub("_", " ", as.character(tree$`split var`))
+  
+  if (shorten_label) {
+    V(graph)$leaf_label <- substr(as.character(tree$prediction), 1, 1)
+    }
+  
+  V(graph)$split <- as.character(round(tree$`split point`, digits = 2))
+  
+  # plot
+  plot <- ggraph(graph, 'tree') + 
+    theme_graph() +
+    geom_edge_link() +
+    geom_node_point() +
+    geom_node_label(aes(label = leaf_label, fill = leaf_label), na.rm = TRUE, 
+                    repel = FALSE, colour = "white",
+                    show.legend = FALSE)
+  
+  print(plot)
+}
+```

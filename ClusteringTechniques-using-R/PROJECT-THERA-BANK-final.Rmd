@@ -1,0 +1,396 @@
+
+```{r include=FALSE}
+#Replace the below command to point to your working directory
+setwd ("C:/DATA/R-prog/learning/Downloaded/Module4-DataMining/Project")
+getwd()
+```
+
+```{r}
+
+##loading libraries required for the project
+
+library(readr)
+library(cluster)
+library(corrplot)
+library(DataExplorer)
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+```
+
+STEP1: DATA LOADING AND TRANSFORMATION
+
+Check for defects in the data such as missing values, null values, and outliers
+
+```{r}
+
+
+#loading the data set into the variable trainDS1
+
+trainDS2 = read.csv("TheraBank.csv")
+head(trainDS2)
+##View(trainDS2)
+dim(trainDS2)
+
+#change to easier column names
+colnames(trainDS2) = c("id", "age", "experience", "income", "zipcode","family", "ccavg", "education", "mortgage", "personal_loan", "securities", "cd", "online", "credit_card") 
+##View(trainDS2)
+
+## check for missing values
+any(is.na(trainDS2))
+
+
+## If any missing values are there omit them
+
+trainDS1 <- na.omit(trainDS2,na.action=TRUE)
+dim(trainDS1)
+any(is.na(trainDS1))
+summary(trainDS1)
+
+trainDS1$experience = abs(trainDS1$experience)  ## fixing -ve values in experience column 
+dim(trainDS1)
+
+
+##exclude ID  column
+##The variable ID does not add any interesting information. Therefore, it will be neglected 
+
+trainDS = trainDS1[,c(-1)]
+head(trainDS)
+dim(trainDS)
+str(trainDS)
+summary(trainDS)
+View(trainDS)
+
+## Currently all columns are of integer type; Need to Convert ZipCode, Familymembers, Education, PersonalLoan , securitiesAccount, cD Account, Online, Creditcard to factors
+ trainDS$zipcode<-as.factor(trainDS$zipcode)
+ trainDS$family<-as.factor(trainDS$family)
+ trainDS$education<-as.factor(trainDS$education)
+ trainDS$personal_loan<-as.factor(trainDS$personal_loan)
+ trainDS$securities<-as.factor(trainDS$securities)
+ trainDS$cd<-as.factor(trainDS$cd)
+ trainDS$online<-as.factor(trainDS$online)
+ trainDS$credit_card<-as.factor(trainDS$credit_card)
+
+str(trainDS)
+attach(trainDS)
+```
+
+
+* there are 5000 rows, 14 columns in the "trainDS1" dataframe
+* There are missing values in certain columns
+* Omitting the rows with missing values, there are  4982 rows, 14 columns
+* confirming that there are no missing values in the refined dataframe "trainDS"
+* Summary command shows that 
+  - Age ranges from 23 to 67, with Mean = 45 years
+  - Experience column has -ve values, which is invalid
+  - Income ranges from $8000 to $2,24,000 per month
+  - Family members ranges from 1 to 4
+  - credit card spends per month ranges from 0 to $10,000 per month, with mean $1940 
+  - House Mortage ranges from 0 to $6,35,000
+
+* Omitting the columns ID, there are  4982 rows, 13 columns
+
+We can use prop.table to get the proportion
+then use barplot to plot it
+
+```{r}
+
+
+
+# Create the input vectors.
+plot_missing(trainDS ) ##No missing data
+
+
+
+##univariate analysis
+plot_histogram(trainDS) 
+ggp1 = ggplot(data = trainDS, aes(x = age))+
+      geom_histogram(fill = "lightblue", binwidth = 5, colour = "black")+
+      geom_vline(aes(xintercept = median(age)), linetype = "dashed")
+ggp1
+
+
+ggp2 = ggplot(data = trainDS, aes(x = experience))+
+      geom_histogram(fill = "lightblue", binwidth = 10, colour = "black")+
+      geom_vline(aes(xintercept = median(experience)), linetype = "dashed")
+ggp2
+
+ggp3 = ggplot(data = trainDS, aes(x = income))+
+      geom_histogram(fill = "lightblue", binwidth = 10, colour = "black")+
+      geom_vline(aes(xintercept = median(income)), linetype = "dashed")
+ggp3
+
+
+ ggp4 = ggplot(data = trainDS, aes(x = ccavg))+
+      geom_histogram(fill = "lightblue", binwidth = 1, colour = "black")+
+      geom_vline(aes(xintercept = median(ccavg)), linetype = "dashed")
+ggp4 
+
+
+ ggp5 = ggplot(trainDS[which(trainDS$mortgage>0),], aes(mortgage)) +
+  geom_histogram(fill = "lightblue", binwidth = 50, colour = "black")+
+   geom_vline(aes(xintercept = median(mortgage)), linetype = "dashed")
+ ggp5  
+
+ 
+
+
+# Basic barplot plot of the 2 values of "total_bill" variables
+
+p <-
+  trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = family, fill = family)) +
+  facet_wrap(~ personal_loan)
+
+
+q <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = education, fill = education)) +
+  facet_wrap(~ personal_loan)
+
+r <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = age, fill = age)) +
+  facet_wrap(~ personal_loan)
+
+s <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = experience, fill = experience)) +
+  facet_wrap(~ personal_loan)
+
+t <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = online, fill = online)) +
+  facet_wrap(~ personal_loan)
+
+u <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = cd, fill = cd)) +
+  facet_wrap(~ personal_loan)
+
+
+v <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = securities, fill = securities)) +
+  facet_wrap(~ personal_loan)
+
+w <-
+   trainDS %>%
+  filter(personal_loan == '1') %>%
+  ggplot() +
+  geom_bar(aes(x = credit_card, fill = credit_card)) +
+  facet_wrap(~ personal_loan)
+
+grid.arrange(p, q, r, s, t, u, v,w)
+ 
+
+## Using boxplot to find outliers
+
+plot_boxplot(trainDS, by = "family", 
+             geom_boxplot_args = list("outlier.color" = "red"))
+
+
+```
+
+BUILD  A DECISION TREE
+
+Split Dataset in Train (70%) & Test (30%) datasets
+```{r}
+# train a decision tree
+library(rpart)
+
+
+set.seed(1300)
+
+## sampling 70% of data for training the algorithms using random sampling 
+trainDS.index = sample(1:nrow(trainDS), nrow(trainDS)*0.70)
+p_train = trainDS[trainDS.index,]
+p_test = trainDS[-trainDS.index,]
+
+
+nrow(p_train)
+nrow(p_test)
+dim(p_train)
+dim(p_test)
+
+
+## Check if distribution of partition data is correct
+
+table(p_train$personal_loan) 
+prop.table((table(p_train$personal_loan))) 
+
+table(p_test$personal_loan)
+prop.table((table(p_test$personal_loan))) 
+
+```
+
+
+```{r}
+
+##install.packages("rattle") 
+##install.packages("RColorBrewer") 
+library(rattle) 
+library(RColorBrewer) 
+##Setting the control parameter inputs for rpart
+
+r.ctrl <- rpart.control(minsplit = 60,
+                        minbucket = 20,
+                        cp = 0,
+                        xval = 5
+                        )
+##Build the model on Training Dataset (Unbalanced)
+
+myformula = p_train$personal_loan~ .
+
+m2 <- rpart(formula = myformula,
+            data = p_train[,-c(9)],
+            method = "class",
+            control = r.ctrl
+            )
+m2
+
+fancyRpartPlot(m2)
+printcp(m2) 
+plotcp(m2) 
+
+
+## Pruning the tree has started
+
+## We are considering 0.07 as the pruned parameter and rebuild the tree
+
+ptree<- prune(m2, cp= 0.07 ,"CP") 
+printcp(ptree)
+plotcp(ptree)
+fancyRpartPlot(ptree)
+#Using gini method
+
+cart_gini = rpart(p_train$personal_loan~., data = p_train, method = "class",
+                   parms = list(split="gini")) 
+
+
+## checking the complexity parameter 
+plotcp(cart_gini)        
+
+## plotting the classification tree 
+rpart.plot(cart_gini, cex =0.6)
+
+cart_gini$cptable
+cart_gini$variable.importance
+
+
+
+trainDS.predict = predict(ptree, p_test, type="class")
+trainDS.predict.prob.1 = trainDS.predict[,1]
+head(trainDS.predict.prob.1, 10)
+
+head(trainDS)
+
+
+
+
+```
+
+
+K-MEANS CLUSTERING
+
+```{r}
+library(cluster)
+
+
+
+income_outlier = boxplot(trainDS$income, plot=FALSE)
+out_Income = income_outlier$out
+trainDS_refined1 <- trainDS[-which(trainDS$income %in% out_Income),]
+
+
+CCAvg_outlier <- boxplot(trainDS$ccavg, plot=FALSE)
+out_ccavg<-CCAvg_outlier$out
+trainDS_refined1 <- trainDS_refined1[-which(trainDS_refined1$ccavg %in% out_ccavg),]
+
+
+Mort_outlier <- boxplot(trainDS$mortgage, plot=FALSE)
+out_mort <- Mort_outlier$out
+trainDS_refined1 <- trainDS_refined1[-which(trainDS_refined1$mortgage %in% out_mort),]
+
+
+nrow(trainDS_refined1)
+
+
+custData.Scaled = trainDS_refined1 %>% select_if(is.numeric)
+
+trainDSScaled = scale(custData.Scaled, center = TRUE)
+
+
+#print(trainDSScaled)
+
+
+seed=1000
+set.seed(seed) #since kmeans uses a randomized starting point for cluster centroids
+
+
+clustk = kmeans(x=trainDSScaled, 3, nstart = 10)
+print(clustk)
+
+## ANS - Within cluster sum of squares by cluster:
+## [1] 4212.585 3804.672 4751.016
+##  (between_SS / total_SS =  48.7 %)
+
+clusplot(trainDSScaled, clustk$cluster, 
+         color=TRUE, shade=TRUE, labels=4, lines=1)
+
+```
+```
+
+Random forest
+
+## Categorical variables with more levels will make it require more memory and take longer time to build a random forest.
+
+#Lets start by importing the training datasets. We will also try and get a sense of the dependent # variable (Target). Lets also convert the 'Target' variable to a categorical var (factor).
+
+```{r}
+library(randomForest)
+
+ ind <- sample(2, nrow(trainDS_refined1), replace=TRUE, prob=c(0.7, 0.3))
+ trainData <- trainDS_refined1[ind==1,]
+ testData <- trainDS_refined1[ind==2,]
+
+head(trainData)
+dim(trainData)
+
+nrow(trainData)
+
+print(sum(trainData$personal_loan=="1")/nrow(trainData))
+
+seed=1000
+set.seed(seed)
+rndFor = randomForest(trainData$personal_loan ~ ., data = trainData[,-c(4)], 
+                   ntree=501, mtry = 3, nodesize = 10,
+                   importance=TRUE)
+                   
+print(rndFor)
+
+## Print the error rate
+
+err = rndFor$err.rate
+head(err)
+
+plot(rndFor)
+legend(x="topright", legend = colnames(err), fill = 1:ncol(err))
+
+
+```
