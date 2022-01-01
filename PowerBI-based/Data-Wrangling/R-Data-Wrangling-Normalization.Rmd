@@ -1,0 +1,79 @@
+
+```{r include=FALSE}
+#load libraries
+library(mice)
+
+```
+
+```{r include=FALSE}
+#Replace the below command to point to your working directory
+setwd ("D:/DATA/Personal/Data-Analytics/Python/PWC/Part1")
+
+```
+
+
+```{r}
+etl_set1 <- read.csv("CSV-import-to-R.csv", header=TRUE)
+print(etl_set1)
+
+```
+
+```{r}
+#etl_set1.scaled <- scale(etl_set1[,4:96],na.rm = TRUE)
+#print(etl_set1.scaled)
+
+etl_set1.scaled <- scale(etl_set1[,4:96])
+
+# check that we get mean of 0 and sd of 1
+colMeans(etl_set1.scaled)  # faster version of apply(scaled.dat, 2, mean)
+apply(etl_set1.scaled, 2, sd)
+```
+ 
+```{r}
+library(caret)
+# Assuming goal class is column 10
+preObj <- preProcess(etl_set1[, -10], method=c("center", "scale"))
+etl_set1.scaled <- predict(preObj, etl_set1[, -10])
+```
+
+
+ 
+```{r}
+library(dplyr)
+
+
+
+# Function replaces NA by mean: 
+replace_by_mean <- function(x) {
+  x[is.na(x)] <- mean(x, na.rm = TRUE)
+  return(x)
+}
+
+
+
+# A function imputes NA observations for categorical variables: 
+
+replace_na_categorical <- function(x) {
+  x %>% 
+    table() %>% 
+    as.data.frame() %>% 
+    arrange(-Freq) ->> my_df
+  
+  n_obs <- sum(my_df$Freq)
+  pop <- my_df$. %>% as.character()
+  set.seed(29)
+  x[is.na(x)] <- sample(pop, sum(is.na(x)), replace = TRUE, prob = my_df$Freq)
+  return(x)
+}
+
+
+# Use the two functions in train dataset: 
+etl_set_impute <- etl_set1.scaled %>% 
+  mutate_if(is.numeric, replace_by_mean) %>% 
+  mutate_if(is.factor, replace_na_categorical)
+
+library(DataExplorer)
+plot_histogram(etl_set_impute)
+
+
+```
